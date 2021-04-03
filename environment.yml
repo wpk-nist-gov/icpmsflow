@@ -1,0 +1,17 @@
+name: icpmsflow-env
+channels:
+  - conda-forge
+  - wpk-nist
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scipy
+  # special plotting stuff
+  - holoviews
+  - bokeh
+  # because using scm versioning
+  - setuptools>=38.4
+  # cli
