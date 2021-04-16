@@ -60,6 +60,8 @@ Example usage
 
 See demo notebook : `demo <notebooks/example_usage.ipynb>`_
 
+Example dataset : `example <https://github.com/wpk-nist-gov/icpmsflow/blob/develop/notebooks/example.tgz?raw=true>_`
+
 
 Features
 --------
