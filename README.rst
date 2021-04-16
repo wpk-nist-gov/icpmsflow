@@ -23,6 +23,44 @@ Package to work with icpms data
 * Documentation: https://icpmsflow.readthedocs.io.
 
 
+Installation
+------------
+
+This project is not yet available via conda or on pypi.  The recommended route is to install most dependencies via conda, then pip install directly from github.  For this, do the following:
+
+If you'd like to create an isolated environment:
+
+.. code-block:: console
+
+    $ conda create -n {env-name} python=3.8
+
+Activate the environment you'd like to install to with:
+
+.. code-block:: console
+
+   $ conda activate {env-name}
+
+Install required dependencies with:
+
+.. code-block:: console
+
+   $ conda install -n {env-name} setuptools numpy pandas openpyxl scipy holoviews bokeh jupyter
+
+
+Finally, install `neutron_analysis` in the active environment do:
+
+.. code-block:: console
+
+   $ pip install git+https://github.com/wpk-nist-gov/icpmsflow.git@develop
+
+
+
+Example usage
+-------------
+
+See demo notebook : `demo <notebooks/example_usage.ipynb>`_
+
+
 Features
 --------
 
