@@ -304,7 +304,7 @@ def cumtrapz_frame(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
     else:
         out = pd.concat(
             (
-                cumtrapz_frame(g, groupby=None, x=x, y=y)
+                cumtrapz_frame(g, groupby=None, x=x, y=y, drop_unused=drop_unused)
                 for _, g in df.groupby(groupby, sort=False)
             )
         )
@@ -360,7 +360,88 @@ def norm_frame(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
     else:
         out = pd.concat(
             (
-                norm_frame(g, groupby=None, x=x, y=y)
+                norm_frame(g, groupby=None, x=x, y=y, drop_unused=drop_unused)
+                for _, g in df.groupby(groupby, sort=False)
+            )
+        )
+    return out
+
+
+from scipy.ndimage import median_filter
+
+
+def median_filter_frame(
+    df, groupby=None, x="Time [Sec]", y=None, drop_unused=False, kernel_size=None, **kws
+):
+    """
+    Perform smoothing with median filter
+
+    Parameter
+    ---------
+    df : dataframe
+    groupby : str or array of str, optional
+        names to groupgroupby.  If not specified,
+        integral over entire frame
+    x : str
+        column to use as "x" values
+        These are ignored
+    y : str or array of str, optional
+        columns of "y" data.  If not specified,
+        use all columns except `x`
+    kernel_size : int
+
+    kws : dict
+        extra arguments to `scipy.ndimage.median_filter`
+        Default values are
+
+        * size: (kernel_size, 1)
+        * mode: 'constant'
+
+    Returns
+    -------
+    output : dataframe
+        dataframe integrated over `x`
+    """
+
+    if kernel_size is None:
+        return df
+
+    kws = dict(dict(size=(kernel_size, 1), mode="constant"), **kws)
+
+    if y is None:
+        if groupby is None:
+            col_drop = [x]
+        elif isinstance(groupby, str):
+            col_drop = [x, groupby]
+        else:
+            col_drop = [x] + list(groupby)
+        y = [x for x in df.columns if x not in col_drop]
+    elif isinstance(y, str):
+        y = [y]
+
+    if groupby is None:
+        if drop_unused:
+            if x in df.columns:
+                out = df.loc[:, [x] + y].copy()
+            else:
+                out = df.loc[:, y].copy()
+        else:
+            out = df.copy()
+
+        out.loc[:, y] = median_filter(out.loc[:, y].values, **kws)
+
+    else:
+        out = pd.concat(
+            (
+                median_filter_frame(
+                    g,
+                    groupby=None,
+                    x=x,
+                    y=y,
+                    drop_unused=drop_unused,
+                    kernel_size=kernel_size,
+                    **kws
+                )
                 for _, g in df.groupby(groupby, sort=False)
             )
         )

@@ -47,6 +47,9 @@ Install required dependencies with:
    $ conda install -n {env-name} setuptools numpy pandas openpyxl scipy holoviews bokeh jupyter
 
 
+Note that `jupyter` is not strictly required, but assumed.  You can also use `ipykernel` to just install the kernel for the target environment.
+
+
 Finally, install `neutron_analysis` in the active environment do:
 
 .. code-block:: console
