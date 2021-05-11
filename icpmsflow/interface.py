@@ -267,6 +267,9 @@ class ICPMSAnalysis(DataApplier):
 
         base = Path(basename)
 
+        if base.suffix == ".csv":
+            base = base.with_suffix("")
+
         mapping = [
             ("frame", ".csv", self.frame),
             ("bounds_data", ".bounds.csv", self.bounds_data),
@@ -282,14 +285,21 @@ class ICPMSAnalysis(DataApplier):
 
                 d[name] = (path, frame)
 
-        for path, frame in d.values():
-            frame.to_csv(path, index=False)
+        for name, (path, frame) in d.items():
+            if name == "bounds_data":
+                index = True
+            else:
+                index = False
+            frame.to_csv(path, index=index)
 
     @classmethod
     def from_csv(cls, basename, **kws):
         from pathlib import Path
 
         base = Path(basename)
+
+        if base.suffix == ".csv":
+            base = base.with_suffix("")
 
         mapping = [
             ("frame", ".csv"),
@@ -307,7 +317,11 @@ class ICPMSAnalysis(DataApplier):
             raise ValueError("no base frame found")
 
         for name, path in d.items():
-            kws[name] = pd.read_csv(path)
+            if name == "bounds_data":
+                index_col = [0, 1]
+            else:
+                index_col = None
+            kws[name] = pd.read_csv(path, index_col=index_col)
 
         return cls(**kws)
 
