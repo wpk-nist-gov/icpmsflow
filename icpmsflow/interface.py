@@ -127,6 +127,7 @@ class ICPMSAnalysis(DataApplier):
         baseline_name="baseline",
         signal_name="signal",
         z_threshold=None,
+        offset_frac=None,
     ):
 
         bounds_data = self.get_bounds(
@@ -140,6 +141,7 @@ class ICPMSAnalysis(DataApplier):
             baseline_name=baseline_name,
             signal_name=signal_name,
             z_threshold=z_threshold,
+            offset_frac=offset_frac,
         )
 
         return self.new_like(bounds_data=bounds_data)
@@ -157,7 +159,15 @@ class ICPMSAnalysis(DataApplier):
         baseline_name="baseline",
         signal_name="signal",
         z_threshold=None,
+        offset_frac=None,
     ):
+
+        if offset_frac is None:
+            offset_lower = offset_upper = 1.0
+        else:
+            assert 0.0 < offset_frac < 1.0
+            offset_lower = 1.0 - offset_frac
+            offset_upper = 1.0 + offset_frac
 
         data = self
         if kernel_size is not None:
@@ -213,7 +223,7 @@ class ICPMSAnalysis(DataApplier):
         baseline = (
             df.assign(type_bound=baseline_name)
             .assign(lower_bound=0.0)
-            .assign(upper_bound=lambda x_dim: x_dim["lb"])[
+            .assign(upper_bound=lambda x_dim: x_dim["lb"] * offset_lower)[
                 [type_name, lower_name, upper_name]
             ]
             .set_index("type_bound", append=True)
@@ -221,7 +231,7 @@ class ICPMSAnalysis(DataApplier):
 
         signal = (
             df.assign(type_bound=signal_name)
-            .assign(lower_bound=lambda x_dim: x_dim["lb"])
+            .assign(lower_bound=lambda x_dim: x_dim["lb"] * offset_upper)
             .assign(upper_bound=lambda x_dim: x_dim["ub"])[
                 [type_name, lower_name, upper_name]
             ]
