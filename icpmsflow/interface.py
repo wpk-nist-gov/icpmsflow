@@ -244,6 +244,7 @@ class ICPMSAnalysis(DataApplier):
             if self.bounds_data is not None:
                 kws["bounds_data"] = self.bounds_data
             self._explorer = DataExplorerCombined(**kws)
+        return self._explorer
 
     def from_explorer(self, explorer=None):
         if explorer is None:
