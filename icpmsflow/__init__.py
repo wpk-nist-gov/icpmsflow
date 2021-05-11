@@ -1,6 +1,6 @@
-from .core import cumtrapz_frame, load_paths, norm_frame, tidy_frame
+from .core import DataApplier, load_paths  # cumtrapz_frame, norm_frame, tidy_frame
 from .interface import ICPMSAnalysis
-from .plotbounds import DataExplorerPanel
+from .plotbounds import DataExplorerCombined
 
 # Version info
 try:
@@ -17,10 +17,11 @@ __email__ = "wpk@nist.gov"
 
 
 __all__ = [
+    "DataApplier",
     "load_paths",
-    "cumtrapz_frame",
-    "norm_frame",
-    "tidy_frame",
-    "DataExplorerPanel",
+    # "cumtrapz_frame",
+    # "norm_frame",
+    # "tidy_frame",
+    "DataExplorerCombined",
     "ICPMSAnalysis",
 ]
