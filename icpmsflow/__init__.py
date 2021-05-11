@@ -6,7 +6,7 @@ from .plotbounds import DataExplorerCombined
 try:
     import pkg_resources
 
-    __version__ = pkg_resources.get_distribution("cmomy").version
+    __version__ = pkg_resources.get_distribution("icpmsflow").version
 except Exception:
     # Local copy or not installed with setuptools.
     # Disable minimum version checks on downstream libraries.
