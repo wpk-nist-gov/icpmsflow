@@ -30,13 +30,13 @@ class SpanExplorer(param.Parameterized):
 
     batch = param.ObjectSelector(default="a", objects=["a", "b"])
 
-    bounds = param.Tuple(default=(0.0, 0.0))  # , precedence=-1)
+    bounds = param.Tuple(default=(0.0, 0.0), precedence=-1)
 
-    # signal_bounds = param.Tuple(default=(0.0, 0.0))
-    # baseline_bounds = param.Tuple(default=(0.0, 0.0))
+    # bounds_baseline = param.Tuple(default=(0.0, 0.0))
+    # bounds_signal = param.Tuple(default=(0.0, 0.0))
 
     bounds_type = param.Selector(
-        default="signal", objects=["signal", "baseline"], label="Bounds Name"
+        default="baseline", objects=["baseline", "signal"], label="Bounds Name"
     )
     cycle_bounds = param.Boolean(default=True)
 
@@ -85,6 +85,20 @@ class SpanExplorer(param.Parameterized):
         self.bounds_data = bounds_data
         self._table_dmap = hv.DynamicMap(self.get_table).opts(width=600, height=300)
 
+    # def _update_bounds_to_table(self, bounds, cycle):
+    #     kws = {}
+    #     if bounds != (0.0, 0.0):
+    #         data = self.bounds_data
+    #         data.loc[
+    #             (self.batch, self.bounds_type), self._bounds_limit_names
+    #         ] = bounds
+    #         self.bounds_data = data
+
+    #     if cycle:
+    #         objects = self.param.bounds_type.objects
+    #         index = objects.index(self.bounds_type)
+    #         self.bounds_type = objects[(index + 1) % len(objects)]
+
     @param.depends("bounds", watch=True)
     def _add_bounds_to_table(self):
         if self.bounds != (0.0, 0.0):
@@ -94,10 +108,33 @@ class SpanExplorer(param.Parameterized):
             ] = self.bounds
             self.bounds_data = data
 
+        if self.bounds_type == "signal":
+            self.bounds_signal = self.bounds
+        else:
+            self.bounds_baseline = self.bounds
+
         if self.cycle_bounds:
             objects = self.param.bounds_type.objects
             index = objects.index(self.bounds_type)
             self.bounds_type = objects[(index + 1) % len(objects)]
+
+    # @param.depends('bounds_signal', watch=True)
+    # def _set_bounds_from_bounds_signal(self):
+    #     # self._calls.append('signal')
+    #     self.param.set_param(bounds_type='signal', bounds=self.bounds_signal)
+
+    # @param.depends('bounds_baseline', watch=True)
+    # def _set_bounds_from_bounds_baseline(self):
+    #     # self._calls.append('baseline')
+    #     self.param.set_param(bounds_type='baseline', bounds=self.bounds_baseline)
+
+    # @param.depends('bounds','bounds_type', watch=True)
+    # def _set_from_bounds(self):
+    #     # self._calls.append('bounds')
+    #     if self.bounds_type == 'signal':
+    #         self.bounds_signal = self.bounds
+    #     else:
+    #         self.bounds_baseline = self.bounds
 
     @param.depends("bounds_data")
     def get_table(self):
