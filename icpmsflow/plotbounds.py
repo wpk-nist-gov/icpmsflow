@@ -1,6 +1,5 @@
 import holoviews as hv
-
-# import numpy as np
+import numpy as np
 import pandas as pd
 import panel as pn
 import param
@@ -9,7 +8,7 @@ from holoviews import opts, streams
 
 from .core import DataApplier
 
-_VERBOSE = False
+_VERBOSE = True
 
 
 def _vprint(*args):
@@ -32,8 +31,10 @@ class SpanExplorer(param.Parameterized):
 
     bounds = param.Tuple(default=(0.0, 0.0), precedence=-1)
 
-    # bounds_baseline = param.Tuple(default=(0.0, 0.0))
-    # bounds_signal = param.Tuple(default=(0.0, 0.0))
+    # baseline_lower = param.Number(step=0.1)
+    # baseline_upper = param.Number(step=0.1)
+    # signal_lower = param.Number(step=0.1)
+    # signal_upper = param.Number(step=0.1)
 
     bounds_type = param.Selector(
         default="baseline", objects=["baseline", "signal"], label="Bounds Name"
@@ -108,10 +109,10 @@ class SpanExplorer(param.Parameterized):
             ] = self.bounds
             self.bounds_data = data
 
-        if self.bounds_type == "signal":
-            self.bounds_signal = self.bounds
-        else:
-            self.bounds_baseline = self.bounds
+        # if self.bounds_type == "signal":
+        #     self.bounds_signal = self.bounds
+        # else:
+        #     self.bounds_baseline = self.bounds
 
         if self.cycle_bounds:
             objects = self.param.bounds_type.objects
@@ -207,6 +208,601 @@ class SpanExplorer(param.Parameterized):
         return pn.Row(self.widgets, self.get_plot_dmap)
 
 
+class SpanExplorerInput(param.Parameterized):
+    """
+    object to handle vertical spans
+    """
+
+    batch = param.ObjectSelector(default="a", objects=["a", "b", "c"])
+
+    bounds = param.Tuple(default=(0.0, 0.0), precedence=-1)
+
+    baseline_lower = param.Number(step=0.1, bounds=(0.0, None))
+    baseline_upper = param.Number(step=0.1, bounds=(0.0, None))
+    signal_lower = param.Number(step=0.1, bounds=(0.0, None))
+    signal_upper = param.Number(step=0.1, bounds=(0.0, None))
+
+    bounds_type = param.Selector(
+        default="baseline", objects=["baseline", "signal"], label="Bounds Name"
+    )
+    cycle_bounds = param.Boolean(default=True)
+
+    clear_bounds = param.Action(lambda self: self._clear_bounds())
+    clear_all_bounds = param.Action(lambda self: self._clear_all_bounds())
+
+    bounds_data = param.DataFrame(precedence=-1)
+    batch_dim = param.String(default="batch", precedence=-1)
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.set_bounds_data(self.bounds_data)
+        self._init_span()
+
+    @property
+    def _bounds_limit_names(self):
+        return ["lower_bound", "upper_bound"]
+
+    @property
+    def _bounds_type_name(self):
+        return "type_bound"
+
+    @property
+    def bounds_dim(self):
+        return [self.batch_dim, self._bounds_type_name]
+
+    def set_bounds_data(self, bounds_data):
+        if bounds_data is None:
+            bounds_data = pd.DataFrame(
+                columns=self.bounds_dim + self._bounds_limit_names
+            )
+
+        missing = [b for b in self.bounds_dim if b not in bounds_data.index.names]
+        if set(missing) == set(self.bounds_dim):
+            bounds_data = bounds_data.set_index(self.bounds_dim)
+        elif len(missing) > 0:
+            bounds_data = bounds_data.set_index(missing, append=True)
+
+        # reorder
+        try:
+            bounds_data.index = bounds_data.index.reorder_levels(self.bounds_dim)
+        except Exception:
+            pass
+        self.bounds_data = bounds_data
+        self._table_dmap = hv.DynamicMap(self.get_table).opts(width=600, height=300)
+
+    def _add_bounds_to_table(self, bounds, bounds_type):
+        # Top level function to add bounds to table
+        if bounds != (0.0, 0.0) and bounds[0] <= bounds[1]:
+            data = self.bounds_data
+            data.loc[(self.batch, bounds_type), self._bounds_limit_names] = bounds
+            self.bounds_data = data
+
+    @param.depends("bounds", watch=True)
+    def _update_lower_upper(self):
+        d = {}
+        if self.bounds_type == "baseline":
+            d["baseline_lower"], d["baseline_upper"] = self.bounds
+        elif self.bounds_type == "signal":
+            d["signal_lower"], d["signal_upper"] = self.bounds
+
+        self.param.set_param(**d)
+
+        if self.cycle_bounds:
+            objects = self.param.bounds_type.objects
+            index = objects.index(self.bounds_type)
+            self.bounds_type = objects[(index + 1) % len(objects)]
+
+    @param.depends("baseline_lower", "baseline_upper", watch=True)
+    def _update_table_baseline(self):
+        bounds = (self.baseline_lower, self.baseline_upper)
+        self._add_bounds_to_table(bounds, "baseline")
+
+    @param.depends("signal_lower", "signal_upper", watch=True)
+    def _update_table_signal(self):
+        bounds = (self.signal_lower, self.signal_upper)
+        self._add_bounds_to_table(bounds, "signal")
+
+    @param.depends("bounds_data")
+    def get_table(self):
+        return hv.Table(self.bounds_data.reset_index())
+
+    def _init_span(self):
+        self._blank = hv.Curve([]).opts(active_tools=["box_select"])
+        self._boundsx = streams.BoundsX(source=self._blank, boundsx=(0, 0))
+        self._boundsx.add_subscriber(self._set_bounds)
+        self._span_dmap = hv.DynamicMap(self._update_span)
+
+    @param.depends("bounds_data", "batch")
+    def _update_span(self):
+        span = []
+        data = self.bounds_data.query(f"{self.batch_dim} == @self.batch")
+        for i, g in data.reset_index().iterrows():
+            if g[self._bounds_type_name] == "baseline":
+                color = "blue"
+            else:
+                color = "red"
+
+            lower, upper = g.loc[self._bounds_limit_names]
+
+            span.append(hv.VSpan(lower, upper).opts(color=color, alpha=0.2))
+        if len(span) == 0:
+            span = [self._blank]
+        return hv.Overlay(span)
+
+    @param.depends("batch", watch=True)
+    def _reset_bounds_type_to_default(self):
+        """reset bounds type after batch select"""
+        if self.cycle_bounds:
+            self.bounds_type = self.param.bounds_type.default
+
+        # update bounds if available:
+        bounds = {}
+        for name in ["baseline", "signal"]:
+            try:
+                bounds[name] = tuple(
+                    self.bounds_data.loc[(self.batch, name), self._bounds_limit_names]
+                )
+            except Exception:
+                bounds[name] = (0.0, 0.0)
+        self._safe_bounds = bounds
+
+        self.param.set_param(
+            baseline_lower=bounds["baseline"][0],
+            baseline_upper=bounds["baseline"][1],
+            signal_lower=bounds["signal"][0],
+            signal_upper=bounds["signal"][1],
+        )
+
+    def _set_bounds(self, boundsx):
+        self.bounds = tuple(round(x, 3) for x in boundsx)
+
+    def _clear_bounds(self):
+        # placeholder for clearing bounds of currently selected type
+        q = f"{self.batch_dim} != @self.batch or {self._bounds_type_name} != @self.bounds_type"
+        self.bounds_data = self.bounds_data.query(q)
+
+    def _clear_all_bounds(self):
+        q = f"{self.batch_dim} != @self.batch"
+        self.bounds_data = self.bounds_data.query(q)
+
+    def get_plot_dmap(self):
+        return pn.Column(self._span_dmap * self._blank, self._table_dmap)
+
+    @property
+    def widgets(self):
+        return pn.Param(
+            self.param,
+            name="Bounds",
+            widgets={"bounds_type": pn.widgets.RadioButtonGroup},
+        )
+
+    @property
+    def app(self):
+        return pn.Row(self.widgets, self.get_plot_dmap)
+
+
+class SpanExplorerTabulator0(param.Parameterized):
+    """
+    object to handle vertical spans
+    """
+
+    batch = param.ObjectSelector(default="a", objects=list("abcdefghijk"))
+
+    bounds = param.Tuple(default=(0.0, 0.0), precedence=-1)
+
+    bounds_type = param.Selector(
+        default="baseline", objects=["baseline", "signal"], label="Bounds Name"
+    )
+    cycle_bounds = param.Boolean(default=True)
+
+    clear_bounds = param.Action(lambda self: self._clear_bounds())
+    clear_all_bounds = param.Action(lambda self: self._clear_all_bounds())
+
+    bounds_data = param.DataFrame(precedence=-1)
+    batch_dim = param.String(default="batch", precedence=-1)
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.set_bounds_data(self.bounds_data)
+        self._init_span()
+
+    def set_bounds_data(self, bounds_data):
+        if bounds_data is None:
+            bounds_data = pd.DataFrame(
+                columns=self.bounds_dim + self._bounds_limit_names
+            )
+
+        if isinstance(bounds_data.index, pd.MultiIndex):
+            bounds_data = bounds_data.reset_index()
+
+        order = self.bounds_dim + self._bounds_limit_names
+        bounds_data = (
+            bounds_data[order]
+            .set_index(self.bounds_dim)
+            .reindex(
+                pd.MultiIndex.from_product(
+                    (self.param.batch.objects, self.param.bounds_type.objects),
+                    names=self.bounds_dim,
+                )
+            )
+            .reset_index()
+        )
+
+        # make sure is numeric
+        bounds_data = bounds_data.applymap(lambda x: pd.to_numeric(x, errors="ignore"))
+        self.bounds_data = bounds_data
+        editors = {
+            k: {"type": "number", "step": 0.5, "min": 0.0}
+            for k in self._bounds_limit_names
+        }
+
+        self.table = pn.widgets.Tabulator(
+            bounds_data, show_index=False, editors=editors
+        )  # self.bokeh_editors)#, show_index=False)
+
+        self._reset_bounds_type_to_default()
+
+    @property
+    def _bounds_limit_names(self):
+        return ["lower_bound", "upper_bound"]
+
+    @property
+    def _bounds_type_name(self):
+        return "type_bound"
+
+    #     @property
+    #     def _pivot_names(self):
+    #         return [f'{a}:{b}' for a in x.param.bounds_type.objects for b in x._bounds_limit_names]
+
+    #     @property
+    #     def _baseline_signal
+
+    @property
+    def bounds_dim(self):
+        return [self.batch_dim, self._bounds_type_name]
+
+    @param.depends("bounds", watch=True)
+    def _add_bounds_to_table(self):
+        if not hasattr(self, "table"):
+            return
+
+        if self.bounds != (0.0, 0.0):
+
+            data = self.table.value.set_index(self.bounds_dim)
+            data.loc[
+                (self.batch, self.bounds_type), self._bounds_limit_names
+            ] = self.bounds
+            self.table.value = data.reset_index()
+
+        if self.cycle_bounds:
+            objects = self.param.bounds_type.objects
+            index = objects.index(self.bounds_type)
+            self.bounds_type = objects[(index + 1) % len(objects)]
+
+    # @param.depends('table.param', "batch")
+    def _get_table(self):
+        # print("_get_table")
+        # self._reset_table_selection()
+        return self.table
+
+    def get_table(self):
+        return pn.Pane(self._get_table)
+
+    @param.depends("batch", watch=True)
+    def _reset_table_selection(self):
+        print("reset_table_select")
+        if not hasattr(self, "table"):
+            return
+        data = self.table.value
+        iloc = list(np.where(data.batch == self.batch)[0])
+
+        kws = {}
+        if tuple(self.table.frozen_rows) != tuple(iloc):
+            kws["frozen_rows"] = iloc
+        if tuple(self.table.selection) != tuple(iloc):
+            kws["selection"] = iloc
+
+        if len(kws) > 0:
+            self.table.param.set_param(**kws)
+
+    def _init_span(self):
+        self._blank = hv.Curve([]).opts(active_tools=["box_select"])
+        self._boundsx = streams.BoundsX(source=self._blank, boundsx=(0, 0))
+        self._boundsx.add_subscriber(self._set_bounds)
+        self._span_dmap = hv.DynamicMap(self._update_span)
+
+    @param.depends("table.value", "batch")
+    def _update_span(self):
+        print("update_span")
+        if not hasattr(self, "table"):
+            return
+        span = []
+        data = self.table.value.query(f"{self.batch_dim} == @self.batch").fillna(0.0)
+        for i, g in data.reset_index().iterrows():
+            if g[self._bounds_type_name] == "baseline":
+                color = "blue"
+            else:
+                color = "red"
+
+            lower, upper = g.loc[self._bounds_limit_names]
+            if upper >= lower:
+                span.append(hv.VSpan(lower, upper).opts(color=color, alpha=0.2))
+
+        self._current_samp = span
+        if len(span) == 0:
+            span = [self._blank]
+        return hv.Overlay(span)
+
+    @param.depends("batch", watch=True)
+    def _reset_bounds_type_to_default(self):
+        print("reset_bounds_type_to_default")
+        """reset bounds type after batch select"""
+        #         print('in reset batch')
+        self.bounds_type = self.param.bounds_type.default
+
+    #         self._reset_table_selection()
+
+    def _set_bounds(self, boundsx):
+        self.bounds = tuple(round(x, 3) for x in boundsx)
+
+    def _clear_bounds(self):
+        # placeholder for clearing bounds of currently selected type
+        data = self.table.value
+        msk = (data[self.batch_dim] == self.batch) & (
+            data[self._bounds_type_name] == self.bounds_type
+        )
+        data.loc[msk, self._bounds_limit_names] = np.nan
+
+        self.table.value = data
+
+    #         self._reset_table_selection()
+
+    def _clear_all_bounds(self):
+        data = self.table.value
+        msk = data[self.batch_dim] == self.batch
+        data.loc[msk, self._bounds_limit_names] = np.nan
+
+        self.table.value = data
+
+    #         self._reset_table_selection()
+
+    def get_plot_dmap(self):
+        return pn.Column(self._span_dmap * self._blank, self.get_table)
+
+    @property
+    def widgets(self):
+        return pn.Param(
+            self.param,
+            name="Bounds",
+            widgets={"bounds_type": pn.widgets.RadioButtonGroup},
+        )
+
+    @property
+    def app(self):
+        return pn.Row(self.widgets, self.get_plot_dmap)
+
+
+import time
+from functools import wraps
+
+
+# def timing_val(func):
+#     def wrapper(*arg, **kw):
+#         '''source: http://www.daniweb.com/code/snippet368.html'''
+#         t1 = time.time()
+#         res = func(*arg, **kw)
+#         t2 = time.time()
+#         return (t2 - t1), res, func.__name__
+#     return wrapper
+def verbose(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        t0 = time.time()
+        out = func(self, *args, **kwargs)
+        t1 = time.time()
+        print(f"{func.__name__}: {t1 - t0}")
+        return out
+
+    return wrapper
+
+
+class SpanExplorerTabulator(param.Parameterized):
+    """
+    object to handle vertical spans
+    """
+
+    batch = param.ObjectSelector(default="a", objects=list("abcdefghijk"))
+
+    bounds = param.Tuple(default=(0.0, 0.0), precedence=-1)
+
+    bounds_type = param.Selector(
+        default="baseline", objects=["baseline", "signal"], label="Bounds Name"
+    )
+    cycle_bounds = param.Boolean(default=True)
+
+    clear_bounds = param.Action(lambda self: self._clear_bounds())
+    clear_all_bounds = param.Action(lambda self: self._clear_all_bounds())
+
+    bounds_data = param.DataFrame(precedence=-1)
+    batch_dim = param.String(default="batch", precedence=-1)
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.set_bounds_data(self.bounds_data)
+        self._init_span()
+
+    @verbose
+    def set_bounds_data(self, bounds_data):
+        if bounds_data is None:
+            bounds_data = pd.DataFrame(
+                columns=self.bounds_dim + self._bounds_limit_names
+            )
+
+        if isinstance(bounds_data.index, pd.MultiIndex):
+            bounds_data = bounds_data.reset_index()
+
+        order = self.bounds_dim + self._bounds_limit_names
+        bounds_data = (
+            bounds_data[order]
+            .set_index(self.bounds_dim)
+            .reindex(
+                pd.MultiIndex.from_product(
+                    (self.param.batch.objects, self.param.bounds_type.objects),
+                    names=self.bounds_dim,
+                )
+            )
+            .reset_index()
+        )
+
+        # make sure is numeric
+        bounds_data = bounds_data.applymap(lambda x: pd.to_numeric(x, errors="ignore"))
+        self.bounds_data = bounds_data
+        editors = {
+            k: {"type": "number", "step": 0.5, "min": 0.0}
+            for k in self._bounds_limit_names
+        }
+
+        self.table = pn.widgets.Tabulator(
+            bounds_data, show_index=False, editors=editors
+        )  # self.bokeh_editors)#, show_index=False)
+
+        self._reset_bounds_type_to_default()
+
+    @property
+    def _bounds_limit_names(self):
+        return ["lower_bound", "upper_bound"]
+
+    @property
+    def _bounds_type_name(self):
+        return "type_bound"
+
+    #     @property
+    #     def _pivot_names(self):
+    #         return [f'{a}:{b}' for a in x.param.bounds_type.objects for b in x._bounds_limit_names]
+
+    #     @property
+    #     def _baseline_signal
+
+    @property
+    def bounds_dim(self):
+        return [self.batch_dim, self._bounds_type_name]
+
+    @verbose
+    @param.depends("bounds", watch=True)
+    def _add_bounds_to_table(self):
+        if not hasattr(self, "table"):
+            return
+        if self.bounds != (0.0, 0.0):
+
+            data = self.table.value.set_index(self.bounds_dim)
+            data.loc[
+                (self.batch, self.bounds_type), self._bounds_limit_names
+            ] = self.bounds
+            self.table.value = data.reset_index()
+
+        if self.cycle_bounds:
+            objects = self.param.bounds_type.objects
+            index = objects.index(self.bounds_type)
+            self.bounds_type = objects[(index + 1) % len(objects)]
+
+    @verbose
+    @param.depends("batch", watch=True)
+    def _reset_table_selection(self):
+        if not hasattr(self, "table"):
+            return
+        data = self.table.value
+        iloc = list(np.where(data.batch == self.batch)[0])
+
+        kws = {}
+        if tuple(self.table.frozen_rows) != tuple(iloc):
+            kws["frozen_rows"] = iloc
+        if tuple(self.table.selection) != tuple(iloc):
+            kws["selection"] = iloc
+
+        if len(kws) > 0:
+            self.table.param.set_param(**kws)
+
+    @verbose
+    def _init_span(self):
+        self._blank = hv.Curve([]).opts(active_tools=["box_select"])
+        self._boundsx = streams.BoundsX(source=self._blank, boundsx=(0, 0))
+        self._boundsx.add_subscriber(self._set_bounds)
+        self._span_dmap = hv.DynamicMap(self._update_span)
+
+    @verbose
+    @param.depends("table.value", "batch")
+    def _update_span(self):
+        if not hasattr(self, "table"):
+            return
+        span = []
+        data = self.table.value.query(f"{self.batch_dim} == @self.batch").fillna(0.0)
+        for i, g in data.reset_index().iterrows():
+            if g[self._bounds_type_name] == "baseline":
+                color = "blue"
+            else:
+                color = "red"
+
+            lower, upper = g.loc[self._bounds_limit_names]
+            if upper >= lower:
+                span.append(hv.VSpan(lower, upper).opts(color=color, alpha=0.2))
+
+        self._current_samp = span
+        if len(span) == 0:
+            span = [self._blank]
+        return hv.Overlay(span)
+
+    @verbose
+    @param.depends("batch", watch=True)
+    def _reset_bounds_type_to_default(self):
+        """reset bounds type after batch select"""
+        self.bounds_type = self.param.bounds_type.default
+
+    #         self._reset_table_selection()
+
+    def _set_bounds(self, boundsx):
+        self.bounds = tuple(round(x, 3) for x in boundsx)
+
+    @verbose
+    def _clear_bounds(self):
+
+        # placeholder for clearing bounds of currently selected type
+        data = self.table.value
+        # q = f"{self.batch_dim} == @self.batch and {self._bounds_type_name} == @self.bounds_type"
+        msk = (data[self.batch_dim] == self.batch) & (
+            data[self._bounds_type_name] == self.bounds_type
+        )
+        data.loc[msk, self._bounds_limit_names] = np.nan
+
+        self.table.value = data
+
+    #         self._reset_table_selection()
+
+    @verbose
+    def _clear_all_bounds(self):
+        data = self.table.value
+        msk = data[self.batch_dim] == self.batch
+        data.loc[msk, self._bounds_limit_names] = np.nan
+
+        self.table.value = data
+
+    #         self._reset_table_selection()
+
+    def get_plot_dmap(self):
+        return pn.Column(self._span_dmap * self._blank, self.table)  # get_table)
+
+    @property
+    def widgets(self):
+        return pn.Param(
+            self.param,
+            name="Bounds",
+            widgets={"bounds_type": pn.widgets.RadioButtonGroup},
+        )
+
+    @property
+    def app(self):
+        return pn.Row(self.widgets, self.get_plot_dmap)
+
+
 class PlotExplorer(param.Parameterized):
     # dataframes
     data = param.DataFrame(precedence=-1)
@@ -245,6 +841,7 @@ class PlotExplorer(param.Parameterized):
         if self.data is not None:
             self._post_data()
 
+    @verbose
     def _update_options(self):
         """update options, and returns dict of values to be batch set"""
 
@@ -259,7 +856,6 @@ class PlotExplorer(param.Parameterized):
                 else:
                     self.param[k].precedence = None
 
-                    _vprint("setting", k)
                     val = list(self.data[dim].unique())
                     self.param[k].objects = val
 
@@ -278,16 +874,6 @@ class PlotExplorer(param.Parameterized):
 
         return values_dict
 
-    # def _update_dataset(self):
-    #     _vprint("update dataset")
-    #     if self.data is not None:
-    #         self._ds = hv.Dataset(
-    #             self.data,
-    #             [self.batch_dim, self.variable_dim, self.element_dim, self.time_dim],
-    #         )
-    #     else:
-    #         self._ds = None
-
     @property
     def kdims(self):
         return [
@@ -296,6 +882,7 @@ class PlotExplorer(param.Parameterized):
             if k in self.data.columns
         ]
 
+    @verbose
     def _set_plot_dmap(self):
         tooltips = [
             ("Element", f"@{{{self.element_dim}}}"),
@@ -308,16 +895,16 @@ class PlotExplorer(param.Parameterized):
             opts.Scatter(framewise=True, tools=[hover], width=600, height=400),
         )
 
+    @verbose
     @param.depends("data", watch=True)
     def _post_data(self):
-        _vprint("post data")
         values_dict = self._update_options()
         # self._update_dataset()
-
         self._set_plot_dmap()
         self.param.set_param(**values_dict)
         # setup plot_dmap
 
+    @verbose
     @param.depends("data")
     def get_plot_dmap(self):
         if hasattr(self, "_plot_dmap"):
@@ -327,54 +914,7 @@ class PlotExplorer(param.Parameterized):
 
         return plot
 
-    # @param.depends("batch", "variable", "element", "Step_plot")
-    # def get_plot(self):
-    #     _vprint("updating plot")
-    #     if self.data is not None:
-    #         sub = self._ds.select(
-    #             batch=[self.batch], variable=[self.variable], element=self.element
-    #         )
-    #         scat = (
-    #             sub.to(hv.Scatter, self.time_dim, self.value_dim, self.element_dim)
-    #             .overlay(self.element_dim)
-    #             .opts(opts.Scatter(size=5))
-    #         )
-    #         line = sub.to(
-    #             hv.Curve, self.time_dim, self.value_dim, self.element_dim
-    #         ).overlay(self.element_dim)
-
-    #         if self.Step_plot:
-    #             line = line.opts(opts.Curve(interpolation="steps-mid"))
-    #         else:
-    #             line = line.opts(opts.Curve(interpolation="linear"))
-
-    #     else:
-    #         scat = hv.Scatter([])
-    #         line = hv.Curve([])
-
-    #     return scat * line
-
-    # def _apply_func(self, func, sub, groupby="default", x=None, y=None, **kws):
-    #     if groupby == "default":
-    #         groupby = [self.batch_dim, self.element_dim, self.variable_dim]
-    #     if x is None:
-    #         x = self.time_dim
-    #     if y is None:
-    #         y = self.value_dim
-    #     return func(sub, groupby=groupby, x=x, y=y, **kws)
-
-    # def _cumtrap(self, sub, **kws):
-    #     return self._apply_func(cumtrapz_frame, sub, **kws)
-
-    # def _norm(self, sub, **kws):
-    #     return self._apply_func(norm_frame, sub, **kws)
-
-    # def _smooth(self, sub, **kws):
-    #     return self._apply_func(median_filter_frame, sub, **kws)
-
-    # def _get_applier(self, frame):
-    #     return  DataApplier(sub, groupby=[self.batch_dim, self.element_dim, self.variable_dim], x=self.time_dim, y=self.value_dim)
-
+    @verbose
     def _apply_all_funcs(self, sub, names=None):
 
         if names is None:
@@ -424,22 +964,9 @@ class PlotExplorer(param.Parameterized):
 
         return sub_line, sub_scat
 
-    # def _apply_smooth(self, sub):
-    #     if self.smooth_line_check or self.smooth_scat_check:
-    #         smoothed = self._apply_func(
-    #             median_filter_frame, sub, kernel_size=self.smooth_param
-    #         )
-    #         sub_line = smoothed if self.smooth_line_check else sub
-    #         sub_scat = smoothed if self.smooth_scat_check else sub
-
-    #     else:
-    #         sub_line = sub_scat = sub
-    #     return sub_line, sub_scat
-
     def _to_dataset(self, sub_line, sub_scat):
 
         kdims = self.kdims
-        # kdims = self._kdims[self.batch_dim, self.variable_dim, self.element_dim, self.time_dim]
         vdims = [self.value_dim]
 
         if sub_line is sub_scat:
@@ -449,6 +976,7 @@ class PlotExplorer(param.Parameterized):
             ds_scat = hv.Dataset(sub_scat, kdims, vdims)
         return ds_line, ds_scat
 
+    @verbose
     @param.depends(
         "batch",
         "variable",
@@ -460,23 +988,16 @@ class PlotExplorer(param.Parameterized):
         "smooth_line_check",
         "smooth_scat_check",
         "smooth_param",
-    )  # , 'integrate_prec','normalize_prec','smooth_prec')
+    )
     def get_plot(self):
-        _vprint("updating plot")
         if self.data is not None:
 
             sub = self.data.query(self._query)
-            # sub = self.data.query(
-            #     "batch==@self.batch and variable==@self.variable and element in @self.element"
-            # )
 
             # apply functions
             sub_line, sub_scat = self._apply_all_funcs(sub)
 
-            # sub_line, sub_scat = self._apply_smooth(sub)
             ds_line, ds_scat = self._to_dataset(sub_line, sub_scat)
-
-            # sub = hv.Dataset(sub, [self.batch_dim, self.variable_dim, self.element_dim, self.time_dim], [self.value_dim])
 
             scat = (
                 ds_scat.to(hv.Scatter, self.time_dim, self.value_dim, self.element_dim)
@@ -507,7 +1028,7 @@ class PlotExplorer(param.Parameterized):
         return pn.Row(self.param, self.get_plot_dmap)
 
 
-class DataExplorerCombined(SpanExplorer, PlotExplorer):
+class DataExplorerCombined(SpanExplorerInput, PlotExplorer):
     def __init__(self, **params):
 
         super().__init__(**params)
@@ -518,11 +1039,8 @@ class DataExplorerCombined(SpanExplorer, PlotExplorer):
             for k in ["time", "batch", "element", "variable", "value"]
         }
 
-        # _vprint('pre')
         # if self.data is not None:
         #     self._post_data()
-
-        # _vprint('post')
 
         self.set_bounds_data(self.bounds_data)
         self._init_span()
@@ -549,6 +1067,55 @@ class DataExplorerCombined(SpanExplorer, PlotExplorer):
     @property
     def app(self):
         return pn.Row(self.widgets, self.get_plot_dmap)
+
+
+class DataExplorerCombinedTabulator(SpanExplorerTabulator, PlotExplorer):
+    def __init__(self, **params):
+
+        super().__init__(**params)
+
+        # mapping from local names to actual name
+        self._dim_mapping = {
+            k: getattr(self, f"{k}_dim")
+            for k in ["time", "batch", "element", "variable", "value"]
+        }
+
+        # _vprint('pre')
+        # if self.data is not None:
+        #     self._post_data()
+
+        # _vprint('post')
+
+        self.set_bounds_data(self.bounds_data)
+        self._init_span()
+
+    # specialization for this object
+    @verbose
+    @param.depends("data")
+    def get_plot_dmap(self):
+        if hasattr(self, "_plot_dmap"):
+            plot = (
+                self._plot_dmap * self._blank * self._span_dmap
+            )  # self._table_dmap# * self._span_dmap
+        else:
+            plot = hv.Curve([])
+
+        # return plot
+        return pn.Column(plot, pn.Pane(self.table))
+
+    @property
+    def widgets(self):
+        return pn.Param(
+            self.param,
+            name="Data Explorer",
+            widgets={"bounds_type": pn.widgets.RadioButtonGroup},
+        )
+
+    @property
+    def app(self):
+        return pn.Row(
+            self.widgets, self.get_plot_dmap
+        )  # pn.Column(self.get_plot_dmap, self.get_table))
 
 
 # class DataExplorerPanel(param.Parameterized):

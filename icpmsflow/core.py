@@ -17,7 +17,7 @@ from scipy.ndimage import median_filter
 from scipy.signal import savgol_filter
 
 
-def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", **kws):
+def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", urls=False, **kws):
     """
     Rease csv file, metadata at top of file
 
@@ -29,6 +29,8 @@ def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", **kws):
         number of rows (not counting blank lines) that correspond to metadata
     sep : string, default=','
     kws : dict
+    urls : bool, default=False
+        If True, then each path is treated as a webpage.  The data is directly read from the web
 
     Returns
     -------
@@ -40,9 +42,18 @@ def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", **kws):
 
 
     """
-    with open(path, "r") as f:
+
+    if urls:
+        from urllib.request import urlopen as myopen
+    else:
+        myopen = lambda x: open(x, "r")
+
+    with myopen(path) as f:
         # grap metadata from first rows
         meta = [f.readline().strip() for _ in range(ntop)]
+        # clean up meta data
+        meta = [x.decode() if isinstance(x, bytes) else x for x in meta]
+
         df = pd.read_csv(f, **kws)
     # grab last line
 
@@ -313,6 +324,17 @@ def _func_argmin(df, x, y, **kws):
     return xvals[idx]
 
 
+def _func_interpolate_na(df, x, y, **kws):
+    """
+    This assumes x is the index
+    """
+
+    if df.index.name != x:
+        raise ValueError(f"{df.index.name} must by same as {x}")
+
+    return df[y].interpolate(**kws)
+
+
 def argmin_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
     return apply_func_over_groups(
         func=_func_argmin,
@@ -335,6 +357,48 @@ def argmax_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False)
         drop_unused=drop_unused,
         reduction=True,
     )
+
+
+def interpolate_na_frame(
+    df,
+    by=None,
+    x_dim="Time [Sec]",
+    y_dim=None,
+    drop_unused=False,
+    sort_index=False,
+    restore_index=False,
+    **kws,
+):
+
+    # see if have multiindex
+    df_in = df
+    if isinstance(df.index, pd.MultiIndex):
+        df = df.reset_index()
+
+    df = df.set_index(x_dim)
+
+    if sort_index:
+        df = df.sort_index()
+
+    kws = dict(dict(method="index"), **kws)
+
+    out = apply_func_over_groups(
+        func=_func_interpolate_na,
+        df=df,
+        by=by,
+        x_dim=x_dim,
+        y_dim=y_dim,
+        drop_unused=drop_unused,
+        reduction=False,
+        **kws,
+    )
+
+    if restore_index:
+        if isinstance(df_in.index, pd.MultiIndex):
+            out = out.reset_index().set_index(df_in.index.names)
+        elif df_in.index.name is not None:
+            out = out.reset_index().set_index(df_in.index.name)
+    return out
 
 
 def trapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
@@ -531,6 +595,113 @@ def median_filter_frame(
     )
 
 
+def interpolate_newx_frame(
+    df,
+    x,
+    x_dim,
+    by=None,
+    by_kws=None,
+    method="index",
+    mask_minmax=True,
+    sort_index=True,
+    ret_all=False,
+    **kwargs,
+):
+    """
+    interpolate a dataframe at x
+
+    Parameters
+    ----------
+
+    df : DataFrame
+      DataFrame to interpolate (all columns other than x_dim
+      are interpolated)
+
+    x : array
+      values to interpolate at
+
+    x_dim : str
+      column to interpolate over
+
+    by : str, or list of strings, optional
+        if present, do groupby
+
+    by_kws : dict
+        extra arguments to df.groupby
+
+    method : str
+      method for interpolation (see pandas.DataFrame.interpolate
+      options)
+
+    ret_all: bool
+      if True, return all.
+      else only at interpolated points "x"
+
+    assumes df is indexed in same way as index_df
+    """
+
+    if by:
+        if by_kws is None:
+            by_kws = {}
+
+        if isinstance(by, str):
+            by = [by]
+
+        # exclude = by + [x_dim]
+        exclude = by
+        cols = [k for k in df.columns if k not in exclude]
+
+        out = df.groupby(by, **by_kws)[cols].apply(
+            lambda g: interpolate_newx_frame(
+                g,
+                x=x,
+                x_dim=x_dim,
+                by=None,
+                method=method,
+                mask_minmax=mask_minmax,
+                sort_index=sort_index,
+                ret_all=ret_all,
+                **kwargs,
+            )
+        )
+
+    else:
+        # get min/max values along x_dim
+        if mask_minmax:
+            minx = df[x_dim].min()
+            maxx = df[x_dim].max()
+            xx = x[(minx <= x) & (x <= maxx)]
+        else:
+            xx = x
+
+        # set index
+        t = df.set_index(x_dim)
+
+        # new index from union of indicies
+        idx_df = t.index
+        idx_x = pd.Index(xx, name=idx_df.name)
+        idx_union = idx_df.union(idx_x).drop_duplicates()
+
+        # reindex
+        t = t.reindex(idx_union)
+        # end new way
+
+        if sort_index:
+            t = t.sort_index()
+
+        # interpolate over index (linear interpolation)
+        t = t.interpolate(method=method, **kwargs)
+
+        if not ret_all:
+            t = t.reindex(idx_x)
+
+        # t = t.reset_index()#x_dim)
+
+        out = t
+
+    return out
+
+
 # Routines to handle DataApplier operations
 class _CallableResult(object):
     def __init__(self, parent, series):
@@ -636,6 +807,46 @@ class DataApplier(object):
         kws = dict(self.kws, **kws)
         return type(self)(frame, **kws)
 
+    def _is_plain_index(self, index=None):
+        if index is None:
+            index = self.index
+        return not isinstance(index, pd.MultiIndex) and index.name is None
+
+    def set_index(self, keys=None, **kws):
+        """
+        set index of self.frame
+
+        if keys is None, try to add self.by + [self.x_dim] to index
+        """
+
+        frame = self.frame
+        # index = frame.index
+
+        if keys is not None:
+            out = frame.set_index(keys=keys, **kws)
+        elif self._is_plain_index():
+            out = frame.set_index(keys=self.by + [self.x_dim], **kws)
+        else:
+            out = frame.reset_index().set_index(self.by + [self.x_dim])
+        return self.new_like(frame=out)
+
+    def reset_index(self, **kws):
+        return self.new_like(frame=self.frame.reset_index(**kws))
+
+    def reindex_smart(self, index, union=False, sort=None, **kws):
+        names = index.names
+
+        if self._is_plain_index():
+            frame = self.frame.set_index(names)
+        else:
+            frame = self.frame.reset_index().set_index(names)
+
+        if union:
+            index = frame.index.union(index, sort=sort)
+
+        frame = frame.reindex(index, **kws)
+        return self.new_like(frame=frame)
+
     # routines to apply transformations
     def _apply_func(
         self,
@@ -684,6 +895,9 @@ class DataApplier(object):
     def normalize(self, **kws):
         """alieas for norm"""
         return self.norm(**kws)
+
+    def interpolate_na(self, **kws):
+        return self._apply_func(interpolate_na_frame, **kws)
 
     def gradient(self, **kws):
         return self._apply_func(gradient_frame, **kws)
@@ -813,8 +1027,8 @@ class DataApplier(object):
     def hvplot(self):
         return self.frame.hvplot
 
-    def set_index(self, *args, **kwargs):
-        return self.new_like(frame=self.frame.set_index(*args, **kwargs))
+    # def set_index(self, *args, **kwargs):
+    #     return self.new_like(frame=self.frame.set_index(*args, **kwargs))
 
     def __iter__(self):
         return iter(self.frame)
