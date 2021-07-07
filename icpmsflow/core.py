@@ -580,6 +580,8 @@ def median_filter_frame(
     """
     if kernel_size is None:
         return df
+    else:
+        kernel_size = int(kernel_size)
 
     kws = dict(dict(size=(kernel_size, 1), mode="constant"), **kws)
 
