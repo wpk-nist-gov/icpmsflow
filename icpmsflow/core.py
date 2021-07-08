@@ -5,6 +5,7 @@ Core routines to analyze icpms data
 """
 
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -111,8 +112,9 @@ def load_paths(paths, index_cols=None, **kws):
 
     Parameters
     ----------
-    paths : sequence
-        collection of paths to read
+    paths : str, Path, or sequence of str or Path.
+        collection of paths to read.  If str or Path, read in single
+        path.  Otherwise read in multple paths
     meta_keys : string, or sequence of strings, optional
         keys to add to dataframe from meta dictionary
         default is to only include batch
@@ -127,6 +129,9 @@ def load_paths(paths, index_cols=None, **kws):
     df_meta : pandas.DataFrame
         DataFrame of all metadata
     """
+
+    if isinstance(paths, (str, Path)):
+        paths = [paths]
 
     L = []
     M = []
