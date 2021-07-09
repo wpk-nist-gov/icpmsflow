@@ -42,7 +42,31 @@ class ICPMSAnalysis(DataApplier):
         meta=None,
         **kws,
     ):
-
+        """
+        Parameters
+        ----------
+        frame : pandas.DataFrame
+            input frame
+        x_dim : str, default="Time [Sec]"
+            name of column with "x" values
+        batch_dim : str, default="batch"
+            name of column containing batch values
+        value_dim : str, default='value'
+            name of 'value' column in tidy format
+        element_dim : str, default='element'
+            name of 'element' column in tidy format
+        is_tidy : bool, default=False
+            True value indicates data is in 'tidy' format
+        drop_unused : bool, default=False
+            Parameter passed to reduction/manipulation routines.
+            If True, remove unused columns after operation
+        bounds_data : pandas.DataFrame, optional
+            DataFrame containing bounds information.
+        meta : pandas.DataFrame, optional
+            metadata
+        kws : dict
+            optional parameters to pass along to new objects
+        """
         self.frame = frame
         self.x_dim = x_dim
         self.batch_dim = batch_dim
@@ -58,6 +82,7 @@ class ICPMSAnalysis(DataApplier):
     # mimic DataApplier interface
     @property
     def y_dim(self):
+        """'value' dimension"""
         if self.is_tidy:
             return self.value_dim
         else:
@@ -65,6 +90,7 @@ class ICPMSAnalysis(DataApplier):
 
     @property
     def by(self):
+        """groupby dimensions"""
         if self.is_tidy:
             return [self.batch_dim, self.element_dim]
         else:
@@ -90,6 +116,24 @@ class ICPMSAnalysis(DataApplier):
 
     # Have to redo tidy here.
     def tidy(self, value_dim=None, var_dim=None, id_dims=None, **kws):
+        """data to 'tidy' format
+
+        Parameters
+        ----------
+        value_dim : str, optional
+            Name to use for the 'value' column.  Defaults to `self.value_dim`
+        var_dim : str, optional
+            Name to use for the 'variable' column.  Defaults to `self.element_dim`
+        id_dims : str, optional
+            Column(s) to use as identifier variables
+            Defaults to `self.by + self.x_dim`.
+        kws : dict
+            extra arguments to `tidy_frame`
+
+        See Also
+        --------
+        `tidy_frame`, `pandas.melt`
+        """
 
         if value_dim is None:
             value_dim = self.value_dim
@@ -113,41 +157,6 @@ class ICPMSAnalysis(DataApplier):
             is_tidy=True,
         )
 
-    # def add_bounds(
-    #     self,
-    #     kernel_size=None,
-    #     y_dim=None,
-    #     mean_over=None,
-    #     tidy_kws=None,
-    #     type_name="type_bound",
-    #     lower_name="lower_bound",
-    #     upper_name="upper_bound",
-    #     baseline_name="baseline",
-    #     signal_name="signal",
-    #     z_threshold=None,
-    #     offset_frac=None,
-    # ):
-    #     """
-    #     add bounds directly to output object
-
-    #     See `self.get_bounds` for more information
-    #     """
-    #     bounds_data = self.get_bounds(
-    #         kernel_size=kernel_size,
-    #         y_dim=y_dim,
-    #         mean_over=mean_over,
-    #         tidy_kws=tidy_kws,
-    #         type_name=type_name,
-    #         lower_name=lower_name,
-    #         upper_name=upper_name,
-    #         baseline_name=baseline_name,
-    #         signal_name=signal_name,
-    #         z_threshold=z_threshold,
-    #         offset_frac=offset_frac,
-    #     )
-
-    #     return self.new_like(bounds_data=bounds_data)
-
     # other utilies
     def add_bounds(
         self,
@@ -161,11 +170,16 @@ class ICPMSAnalysis(DataApplier):
         baseline_name="baseline",
         signal_name="signal",
         z_threshold=None,
-        offset_frac=None,
         as_frame=False,
         shift=0.0,
     ):
         """
+        Add bounds_data programmatically.
+
+        Finds the maximum/minimum in the gradient of the signal.  This done on a per batch level.
+        The average location of the extrema across elements gives the position of the bounds.
+
+
         Parameters
         ----------
         kernel_size : int, optional
@@ -185,21 +199,14 @@ class ICPMSAnalysis(DataApplier):
         z_threshold : float, optional
             If present, perform zscore over dataset to remove outliers
             Value of about 3 is usually good
-        offset_frac : float, optional
-            fractional value to adjust intersection of baseline/signal down/up
-            For example, if boundary between baseline/signal is at `x`,
-            baseline upper bound is at `(1-offset_frac) * x`, and
-            signal lower bound is at `(1+offset_frac) * x`.
-
         shift : float, tuple,  optional
             shift guessed bounds up/down by this factor.
-            If tuple of length 2, then
+            * If tuple of length 2:
             shift baseline upper - shift[0], signal_lower + shift[0], signal_upper - shift[1]
-            If tuple of length 3, baseline_upper - shift[0], signal_lower - shift[1], signal_upper - shift[0]
-            If float, baseline_upper - shift, signal_lower + shift, signal_upper - shift
-
-
-
+            * If tuple of length 3:
+            baseline_upper - shift[0], signal_lower - shift[1], signal_upper - shift[0]
+            * If float:
+            baseline_upper - shift, signal_lower + shift, signal_upper - shift
         as_frame : bool, default=FAlse
             if True, return dataframe of bounds
             if False, return object like self with bounds_data set from this function
@@ -211,12 +218,6 @@ class ICPMSAnalysis(DataApplier):
 
         """
 
-        # if offset_frac is None:
-        #     offset_lower = offset_upper = 1.0
-        # else:
-        #     assert 0.0 < offset_frac < 1.0
-        #     offset_lower = 1.0 - offset_frac
-        #     offset_upper = 1.0 + offset_frac
         if isinstance(shift, float):
             shift = (shift,) * 3
         else:
@@ -536,57 +537,6 @@ class ICPMSAnalysis(DataApplier):
 
         return self.new_like(frame=new_frame.reset_index())
 
-    # def interpolate_at_bounds(
-    #     self,
-    #     bounds_data=None,
-    #     type_name="type_bound",
-    #     bound_name="edge",
-    #     interp_kws=None,
-    # ):
-    #     """
-    #     interpolate `self.frame` at values in bounds_data
-    #     """
-    #     if bounds_data is None:
-    #         bounds_data = self.bounds_data
-
-    #     # reindex frame
-    #     frame = self.frame.set_index(self.by + [self.x_dim])
-
-    #     # bounds index
-    #     melt = pd.melt(
-    #         bounds_data, var_name=bound_name, value_name=self.x_dim, ignore_index=False
-    #     )
-    #     melt_idx = (
-    #         melt.reset_index().set_index(self.by + [self.x_dim]).index.drop_duplicates()
-    #     )
-
-    #     # new frame
-    #     new_frame = frame.reindex(frame.index.union(melt_idx).sort_values())
-
-    #     if np.any(new_frame.isnull()):
-    #         # need to interpolate
-
-    #         if interp_kws is None:
-    #             interp_kws = {}
-
-    #         interp_kws = dict(dict(method="index"), **interp_kws)
-
-    #         new_frame = pd.concat(
-    #             [
-    #                 g.interpolate(**interp_kws)
-    #                 for i, g in new_frame.reset_index(self.by).groupby(self.by)
-    #             ]
-    #         )
-
-    #     out = pd.merge(
-    #         melt.reset_index(),
-    #         new_frame.reset_index(),
-    #         on=self.by + [self.x_dim],
-    #         how="left",
-    #     )
-
-    #     return out.set_index(self.by + [type_name, bound_name])
-
     # @gcached()
     @property
     def explorer(self):
@@ -683,12 +633,15 @@ class ICPMSAnalysis(DataApplier):
 
         return cls(**kws)
 
-    # @property
-    # def bounds_data(self):
-    #     return self.data_explorer.bounds_data
-
     @classmethod
     def from_paths(cls, paths, load_kws=None, **kws):
+        """
+        Create ICPMSAnalysis object from csv files
+
+
+        Parameters
+        ----------
+        """
         if load_kws is None:
             load_kws = {}
 

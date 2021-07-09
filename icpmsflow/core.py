@@ -174,13 +174,28 @@ def tidy_frame(
 
     Parameters
     ----------
+    id_vars : tuple, list, or ndarray, optional
+        Column(s) to use as identifier variables.
+    value_vars : tuple, list, or ndarray, optional
+        Column(s) to unpivot. If not specified, uses all columns that
+        are not set as `id_vars`.
+    var_name : scalar
+        Name to use for the 'variable' column. If None it uses
+        ``frame.columns.name`` or 'variable'.
+    value_name : scalar, default 'value'
+        Name to use for the 'value' column.
+    ignore_index : bool, default True
+        If True, original index is ignored. If False, the original index is retained.
+        Index labels will be repeated as necessary.
     set_index : bool, default=False
         If True, add `id_vars` and `var_name` to index, if not already there
-
     append : bool, optional
         if `set_index`, this contols whether new levels are appended to the current
         index, or overwrite the current index.
         Default is to use the opposite of `ignore_index`
+
+    kws : dict
+        extra arguments to `df.melt`
 
     """
     if id_vars is not None:
@@ -281,6 +296,67 @@ def apply_func_over_groups(
     return out
 
 
+_APPLY_OVER_GROUPS_DEFAULT_DICT = {
+    "Default_Parameters": """df : dataframe
+    by : str or array of str, optional
+        groupby keys.  If specified, apply {name} over each group. If not specified,
+        apply {name} over entire frame
+    x_dim : str
+        column to use as "x_dim" values
+    y_dim : str or array of str, optional
+        columns of "y_dim" data.  If not specified,
+        use all columns except `x_dim`
+    drop_unused : bool
+        If True, drop unused columns.  Otherwise, keep unused columns""",
+    "Default_Returns": """output : pandas.DataFrame
+        DataFrame with {name} applied over `y_dim`""",
+    "Default_See_Also": "apply_func_over_groups",
+}
+
+_APPLY_OVER_GROUPS_DEFAULT_DOC = """{summary}
+
+    Parameters
+    ----------
+    {Default_Parameters}
+
+    Returns
+    -------
+    {Default_Returns}
+
+    See Also
+    --------
+    {Default_See_Also}
+"""
+
+
+def doc_apply_over_groups(name="function", summary="apply {name} over `df`", **kws):
+    def wrapped(func):
+        doc = func.__doc__
+        if doc is None:
+            doc = _APPLY_OVER_GROUPS_DEFAULT_DOC
+        func.__doc__ = doc.format(
+            **_APPLY_OVER_GROUPS_DEFAULT_DICT, **kws, name=name, summary=summary
+        ).format(name=name, summary=summary)
+        return func
+
+    return wrapped
+
+
+def doc_apply_like(other_func):
+    def wrapped(func):
+        doc = (
+            other_func.__doc__.replace("df : dataframe\n    ", "").replace(
+                "frame", "self.frame"
+            )
+            + f"    {other_func.__name__}"
+        )
+        func.__doc__ = doc
+
+        return func
+
+    return wrapped
+
+
 def _func_trapz(df, x, y):
     xvals = _get_col_or_level(df, x).values
     return trapz(y=df.loc[:, y].values, x=xvals, axis=0)
@@ -340,6 +416,7 @@ def _func_interpolate_na(df, x, y, **kws):
     return df[y].interpolate(**kws)
 
 
+@doc_apply_over_groups("argmin")
 def argmin_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
     return apply_func_over_groups(
         func=_func_argmin,
@@ -352,6 +429,7 @@ def argmin_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False)
     )
 
 
+@doc_apply_over_groups("argmax")
 def argmax_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
     return apply_func_over_groups(
         func=_func_argmax,
@@ -364,6 +442,7 @@ def argmax_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False)
     )
 
 
+@doc_apply_over_groups("interpolate_na")
 def interpolate_na_frame(
     df,
     by=None,
@@ -374,6 +453,24 @@ def interpolate_na_frame(
     restore_index=False,
     **kws,
 ):
+    """replace nan values by interpolating y(x)
+
+    Parameters
+    ----------
+    {Default_Parameters}
+    sort_index : bool, default=False
+        if True, then sort index before before interpolation
+    restore_index : bool, default=False
+        if True, restore index to be like `df`
+
+    Returns
+    -------
+    {Default_Returns}
+
+    See Also
+    --------
+    pandas.DataFrame.interpolate
+    """
 
     # see if have multiindex
     df_in = df
@@ -406,27 +503,8 @@ def interpolate_na_frame(
     return out
 
 
+@doc_apply_over_groups("trapz")
 def trapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
-    """
-    Perform integration on dataframe
-
-    Parameter
-    ---------
-    df : dataframe
-    grouby : str or array of str, optional
-        names to by.  If not specified,
-        integral over entire frame
-    x_dim : str
-        column to use as "x_dim" values
-    y_dim : str or array of str, optional
-        columns of "y_dim" data.  If not specified,
-        use all columns except `x_dim`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x_dim`
-    """
     return apply_func_over_groups(
         func=_func_trapz,
         df=df,
@@ -438,27 +516,8 @@ def trapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
     )
 
 
+@doc_apply_over_groups("cumtrapz")
 def cumtrapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
-    """
-    Perform cumulative integration on dataframe
-
-    Parameter
-    ---------
-    df : dataframe
-    by : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x_dim : str
-        column to use as "x_dim" values
-    y_dim : str or array of str, optional
-        columns of "y_dim" data.  If not specified,
-        use all columns except `x_dim`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x_dim`
-    """
     return apply_func_over_groups(
         func=_func_cumtrapz,
         df=df,
@@ -470,28 +529,8 @@ def cumtrapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=Fals
     )
 
 
+@doc_apply_over_groups("normalize", summary="normalize by max value")
 def norm_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
-    """
-    Perform normalization
-
-    Parameter
-    ---------
-    df : dataframe
-    by : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x_dim : str
-        column to use as "x_dim" values
-        These are ignored
-    y_dim : str or array of str, optional
-        columns of "y_dim" data.  If not specified,
-        use all columns except `x_dim`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x_dim`
-    """
     return apply_func_over_groups(
         func=_func_norm,
         df=df,
@@ -503,6 +542,7 @@ def norm_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
     )
 
 
+@doc_apply_over_groups("gradient", summary="gradient of frame dy/dx")
 def gradient_frame(
     df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False, **kws
 ):
@@ -517,6 +557,7 @@ def gradient_frame(
     )
 
 
+@doc_apply_over_groups("savgol filter")
 def savegol_filter_frame(
     df,
     by=None,
@@ -527,6 +568,27 @@ def savegol_filter_frame(
     polyorder=2,
     **kws,
 ):
+    """smooth data with savegol filter
+
+    Parameters
+    ----------
+    {Default_Parameters}
+    window_length : int, default=None
+        window_length parameter to savgol filter
+    polyorder : int, default=2
+        polyorder parameter to savgol filter
+    kws : dict
+        extra arguments to savegol_filter
+
+    Returns
+    -------
+    {Default_Returns}
+
+    See Also
+    --------
+    {Default_See_Also}
+    scipy.signal.savgol_filter
+    """
 
     if window_length is None:
         return df
@@ -545,6 +607,7 @@ def savegol_filter_frame(
     )
 
 
+@doc_apply_over_groups("median filter")
 def median_filter_frame(
     df,
     by=None,
@@ -554,34 +617,24 @@ def median_filter_frame(
     kernel_size=None,
     **kws,
 ):
-    """
-    Perform smoothing with median filter
+    """smooth data with median filter
 
-    Parameter
-    ---------
-    df : dataframe
-    by : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x_dim : str
-        column to use as "x_dim" values
-        These are ignored
-    y_dim : str or array of str, optional
-        columns of "y_dim" data.  If not specified,
-        use all columns except `x_dim`
-    kernel_size : int
-
+    Parameters
+    ----------
+    {Default_Parameters}
+    kernel_size : int, default=None
+        kernel size of median filter
     kws : dict
-        extra arguments to `scipy.ndimage.median_filter`
-        Default values are
-
-        * size: (kernel_size, 1)
-        * mode: 'constant'
+        extra arguments to median_filter
 
     Returns
     -------
-    output : dataframe
-        dataframe integrated over `x_dim`
+    {Default_Returns}
+
+    See Also
+    --------
+    {Default_See_Also}
+    scipy.ndimage.median_filter
     """
     if kernel_size is None:
         return df
@@ -602,6 +655,7 @@ def median_filter_frame(
     )
 
 
+@doc_apply_over_groups("interpolate")
 def interpolate_newx_frame(
     df,
     x,
@@ -619,32 +673,30 @@ def interpolate_newx_frame(
 
     Parameters
     ----------
-
-    df : DataFrame
-      DataFrame to interpolate (all columns other than x_dim
-      are interpolated)
-
+    {Default_Parameters}
     x : array
       values to interpolate at
-
-    x_dim : str
-      column to interpolate over
-
-    by : str, or list of strings, optional
-        if present, do groupby
-
     by_kws : dict
         extra arguments to df.groupby
-
     method : str
       method for interpolation (see pandas.DataFrame.interpolate
       options)
-
     ret_all: bool
       if True, return all.
       else only at interpolated points "x"
+    mask_minmax : bool, default=True
+        if True, only interpolate to values `x` within bounds
+    kwargs : dict
+        extra arguments to `pandas.DataFrame.interpolate`
 
-    assumes df is indexed in same way as index_df
+    Returns
+    -------
+    {Default_Returns}
+
+    See Also
+    --------
+    pandas.DataFrame.interpolate
+
     """
 
     if by:
@@ -793,6 +845,8 @@ class DataApplier(object):
         **kws,
     ):
 
+        assert isinstance(frame, pd.DataFrame)
+
         self.frame = frame
         if isinstance(by, str):
             by = [by]
@@ -877,7 +931,12 @@ class DataApplier(object):
             drop_unused = self.drop_unused
 
         out = _func(
-            self.frame, by=by, x_dim=x_dim, y_dim=y_dim, drop_unused=drop_unused, **kws
+            df=self.frame,
+            by=by,
+            x_dim=x_dim,
+            y_dim=y_dim,
+            drop_unused=drop_unused,
+            **kws,
         )
 
         if not as_frame:
@@ -886,29 +945,36 @@ class DataApplier(object):
 
         return out
 
+    @doc_apply_like(trapz_frame)
     def trapz(self, **kws):
         return self._apply_func(trapz_frame, True, **kws)
 
+    @doc_apply_like(cumtrapz_frame)
     def cumtrapz(self, **kws):
         return self._apply_func(cumtrapz_frame, **kws)
 
+    @doc_apply_like(cumtrapz_frame)
     def integrate(self, **kws):
         """alias for cumtrapz"""
         return self.cumtrapz(**kws)
 
+    @doc_apply_like(norm_frame)
     def norm(self, **kws):
         return self._apply_func(norm_frame, **kws)
 
+    @doc_apply_like(norm_frame)
     def normalize(self, **kws):
-        """alieas for norm"""
         return self.norm(**kws)
 
+    @doc_apply_like(interpolate_na_frame)
     def interpolate_na(self, **kws):
         return self._apply_func(interpolate_na_frame, **kws)
 
+    @doc_apply_like(gradient_frame)
     def gradient(self, **kws):
         return self._apply_func(gradient_frame, **kws)
 
+    @doc_apply_like(savegol_filter_frame)
     def savgol_filter(self, window_length=None, polyorder=2, **kws):
         return self._apply_func(
             savegol_filter_frame,
@@ -917,15 +983,19 @@ class DataApplier(object):
             **kws,
         )
 
+    @doc_apply_like(median_filter_frame)
     def median_filter(self, kernel_size=None, **kws):
         return self._apply_func(median_filter_frame, kernel_size=kernel_size, **kws)
 
+    @doc_apply_like(argmin_frame)
     def argmin(self, **kws):
         return self._apply_func(argmin_frame, True, **kws)
 
+    @doc_apply_like(argmax_frame)
     def argmax(self, **kws):
         return self._apply_func(argmax_frame, True, **kws)
 
+    @doc_apply_like(tidy_frame)
     def tidy(self, value_dim=None, var_dim=None, id_dims=None, **kws):
 
         if value_dim is None:
@@ -959,71 +1029,71 @@ class DataApplier(object):
     #     return s
 
     # other utilies
-    def get_bounds(
-        self,
-        kernel_size=None,
-        is_tidy=True,
-        y_dim=None,
-        mean_over=None,
-        tidy_kws=None
-        # z_threshold=None
-    ):
+    # def get_bounds(
+    #     self,
+    #     kernel_size=None,
+    #     is_tidy=True,
+    #     y_dim=None,
+    #     mean_over=None,
+    #     tidy_kws=None
+    #     # z_threshold=None
+    # ):
 
-        data = self
-        if kernel_size is not None:
-            data = data.median_filter(kernel_size=kernel_size)
-        data = data.gradient()
+    #     data = self
+    #     if kernel_size is not None:
+    #         data = data.median_filter(kernel_size=kernel_size)
+    #     data = data.gradient()
 
-        lb = data.argmax()
-        ub = data.argmin()
+    #     lb = data.argmax()
+    #     ub = data.argmin()
 
-        if not is_tidy:
-            if tidy_kws is None:
-                tidy_kws = {}
-            if y_dim is None:
-                y_dim = tidy_kws.get("y_dim", "intensity")
-            if mean_over is None:
-                mean_over = tidy_kws.get("var_name", "element")
+    #     if not is_tidy:
+    #         if tidy_kws is None:
+    #             tidy_kws = {}
+    #         if y_dim is None:
+    #             y_dim = tidy_kws.get("y_dim", "intensity")
+    #         if mean_over is None:
+    #             mean_over = tidy_kws.get("var_name", "element")
 
-            lb = lb.tidy(**tidy_kws)
-            ub = ub.tidy(**tidy_kws)
+    #         lb = lb.tidy(**tidy_kws)
+    #         ub = ub.tidy(**tidy_kws)
 
-        else:
-            if y_dim is None:
-                y_dim = self.frame.columns.drop(self.by + [self.x_dim])[0]
-            if mean_over is None:
-                mean_over = self.by[-1]
+    #     else:
+    #         if y_dim is None:
+    #             y_dim = self.frame.columns.drop(self.by + [self.x_dim])[0]
+    #         if mean_over is None:
+    #             mean_over = self.by[-1]
 
-        # mean over stuff
-        by = [k for k in self.by if k != mean_over]
-        lb = lb.frame.drop(mean_over, axis=1).groupby(by).mean()
-        ub = ub.frame.drop(mean_over, axis=1).groupby(by).mean()
+    #     # mean over stuff
+    #     by = [k for k in self.by if k != mean_over]
+    #     lb = lb.frame.drop(mean_over, axis=1).groupby(by).mean()
+    #     ub = ub.frame.drop(mean_over, axis=1).groupby(by).mean()
 
-        # make a frame with lower and upper bounds combined
-        df = pd.merge(
-            lb.rename(columns={y_dim: "lb"}),
-            ub.rename(columns={y_dim: "ub"}),
-            left_index=True,
-            right_index=True,
-        )
-        # return df
+    #     # make a frame with lower and upper bounds combined
+    #     df = pd.merge(
+    #         lb.rename(columns={y_dim: "lb"}),
+    #         ub.rename(columns={y_dim: "ub"}),
+    #         left_index=True,
+    #         right_index=True,
+    #     )
+    #     # return df
 
-        baseline = (
-            df.assign(type_bound="baseline")
-            .assign(lower_bound=0.0)
-            .assign(upper_bound=lambda x_dim: x_dim["lb"])[
-                ["type_bound", "lower_bound", "upper_bound"]
-            ]
-        )
+    #     baseline = (
+    #         df.assign(type_bound="baseline")
+    #         .assign(lower_bound=0.0)
+    #         .assign(upper_bound=lambda x_dim: x_dim["lb"])[
+    #             ["type_bound", "lower_bound", "upper_bound"]
+    #         ]
+    #     )
 
-        signal = (
-            df.assign(type_bound="signal")
-            .assign(lower_bound=lambda x_dim: x_dim["lb"])
-            .assign(upper_bound=lambda x_dim: x_dim["ub"])[
-                ["type_bound", "lower_bound", "upper_bound"]
-            ]
-        )
-        return pd.concat((baseline, signal)).sort_index()
+    #     signal = (
+    #         df.assign(type_bound="signal")
+    #         .assign(lower_bound=lambda x_dim: x_dim["lb"])
+    #         .assign(upper_bound=lambda x_dim: x_dim["ub"])[
+    #             ["type_bound", "lower_bound", "upper_bound"]
+    #         ]
+    #     )
+    #     return pd.concat((baseline, signal)).sort_index()
 
     # pandas wrappers
     @property
