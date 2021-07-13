@@ -157,6 +157,86 @@ class ICPMSAnalysis(DataApplier):
             is_tidy=True,
         )
 
+    @staticmethod
+    def _reset_or_copy(frame, reset_index, copy, deep):
+        out = frame
+        if reset_index and isinstance(out.index, pd.MultiIndex):
+            out = out.reset_index()
+        elif copy:
+            out = out.copy(deep=deep)
+        return out
+
+    def get_frame(self, reset_index=True, copy=False, deep=True):
+        """
+        get current self.frame
+
+        Parameters
+        ----------
+        reset_index : bool, default=True
+            If True, and `self.frame` has a multiindex, then get a copy of data
+            with reset_index
+        copy : bool, default=False
+            If True, return a copy of `self.frame`.  Note that this is ignored if
+            the index is reset.
+        deep : bool, default=True
+            If true, and `copy`, return a deep copy
+        """
+        return self._reset_or_copy(
+            self.frame, reset_index=reset_index, copy=copy, deep=deep
+        )
+
+    def get_bounds(self, reset_index=True, copy=False, deep=True):
+        """
+        Get the current bounds data
+
+        This is a convenience function to work with `bounds_data` in multiple formats.
+        The default form of `bounds_data` is a tidy DataFrame with a multiindex.
+
+        Parameters
+        ----------
+        reset_index : bool, default=True
+            If true, return copy of data, without multiindex
+        copy : bool
+            Return a copy of `self.bounds_data`.  This is ignored if
+            the index is reset
+        deep : bool, default=True
+            If true, and `copy`, return a deep copy
+        """
+        return self._reset_or_copy(
+            self.bounds_data, reset_index=reset_index, copy=copy, deep=deep
+        )
+
+    def set_bounds(self, bounds_data, set_index=None, type_name="type_bound"):
+        """
+        create new ICPMSAnalysis object with `bounds_data`
+
+        Expect that Bounds Data will have multiindex with levels [`self.batch_dim`, `type_name`]
+        and columns ['lower_bounds','upper_bound]
+
+        Parameters
+        ----------
+        bounds_data : DataFrame
+            bounds_data for new object
+        set_index : bool, default=None
+            if `set_index`, then it is assumed the input `bounds_data object
+            Does not have a multiindex.  The index for `new.bounds_data` will be set to
+            [`self.batch_dim`, `type_name`].
+            If `set_index` is None, then try to guess if bounds_data has correct index.
+        type_name : str, default="type_bound"
+            name of column (or index level) with name of bounds type
+
+        Returns
+        -------
+        new : ICPMSAnalysis object
+        """
+
+        if set_index is None:
+            set_index = not isinstance(bounds_data, pd.MultiIndex)
+        if set_index:
+            bounds_data = bounds_data.set_index([self.batch_dim, type_name])
+
+        return self.new_like(bounds_data=bounds_data)
+
     # other utilies
     def add_bounds(
         self,
@@ -207,7 +287,7 @@ class ICPMSAnalysis(DataApplier):
             baseline_upper - shift[0], signal_lower - shift[1], signal_upper - shift[0]
             * If float:
             baseline_upper - shift, signal_lower + shift, signal_upper - shift
-        as_frame : bool, default=FAlse
+        as_frame : bool, default=False
             if True, return dataframe of bounds
             if False, return object like self with bounds_data set from this function
 
@@ -404,6 +484,19 @@ class ICPMSAnalysis(DataApplier):
         else:
             return self.new_like(bounds_data=out)
 
+    def _bounds_check_index(self, bounds_data, type_name):
+        if bounds_data is None:
+            if self.bounds_data is None:
+                raise ValueError("trying to default to unset `self.bounds_data`")
+            bounds_data = self.bounds_data
+
+        if isinstance(bounds_data.index, pd.MultiIndex):
+            names = bounds_data.index.names
+            assert type_name in names and self.batch_dim in names
+        else:
+            bounds_data = bounds_data.set_index([self.batch_dim, type_name])
+        return self.bounds_data
+
     def _bounds_melt(self, bounds_data=None, bound_name="edge"):
         if bounds_data is None:
             bounds_data = self.bounds_data
@@ -443,6 +536,7 @@ class ICPMSAnalysis(DataApplier):
         upper_name="upper_bound",
         lower_name="lower_bound",
         as_delta=False,
+        reset_index=False,
     ):
         """
         interpolate `self.frame` at values in `bounds_data`
@@ -451,18 +545,33 @@ class ICPMSAnalysis(DataApplier):
         ----------
         bounds_data : DataFrame, optional
             Defaults to `self.bounds_data`
-        integrate : bool, default=False
+        integrate : bool, default=True
             perform integration before analysis
+        integrate_kws : dict
+            extra arguments to `self.integrate`
         type_name, bound_name : str
             names of type of bound (e.g., baseline, signal) and bound edge column.  The later
             is the column name of the stacked  bounds_data frame
         interp_kws : dict, optional
             optinal arguments to `self.interpolate_na`
         merge : bool, default=True
-            if True, merge the interpolated results with `bounds_data`
+            if True, merge the interpolated results with `bounds_data` and
+            return this DataFrame.
+        as_delta : bool, default=False
+            if True, take difference of `upper_name` - `lower_name`
+            Therefore, to get the integral from 'lower' to 'upper' bounds, call
+            this method with integral and `as_delta = True`
+        reset_index, : bool, default=False
+            If True, reset_index of final result
 
+        Returns
+        -------
+        output : ICPMSAnalysis or pd.DataFrame
+            if `merge` then output is a DataFrame.  Otherwise, output is
+            an ICPMSAnalaysis object interpolated at `bounds_data`
         """
 
+        # bounds_data = self._bounds_check_index(bounds_data, type_name)
         bounds_melt = self._bounds_melt(bounds_data=bounds_data, bound_name=bound_name)
         bounds_index = self._bounds_to_index(bounds_melt=bounds_melt)
 
@@ -492,8 +601,10 @@ class ICPMSAnalysis(DataApplier):
             if as_delta:
                 upper = new.xs(upper_name, level=bound_name)
                 lower = new.xs(lower_name, level=bound_name)
-
                 new = upper - lower
+
+        if reset_index:
+            new = new.reset_index()
 
         return new
 
