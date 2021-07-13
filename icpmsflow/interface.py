@@ -391,13 +391,15 @@ class ICPMSAnalysis(DataApplier):
         as_frame=False,
         lower_name="lower_bound",
         upper_name="upper_bound",
+        type_name="type_bound",
     ):
         """
         adjust bounds to fit within min/max of self.frame[self.x_dim]
         """
 
-        if bounds_data is None:
-            bounds_data = self.bounds_data
+        bounds_data = self._bounds_check_index(bounds_data, type_name)
+        # if bounds_data is None:
+        #     bounds_data = self.bounds_data
 
         minmax = self.frame.groupby(self.by)[self.x_dim].agg(["min", "max"])
 
@@ -453,8 +455,9 @@ class ICPMSAnalysis(DataApplier):
         adjust bounds to fit correspond to nearest x value
         """
 
-        if bounds_data is None:
-            bounds_data = self.bounds_data
+        bounds_data = self._bounds_check_index(bounds_data, type_name)
+        # if bounds_data is None:
+        #     bounds_data = self.bounds_data
 
         m = bounds_data.unstack(type_name).copy()
 
@@ -495,7 +498,7 @@ class ICPMSAnalysis(DataApplier):
             assert type_name in names and self.batch_dim in names
         else:
             bounds_data = bounds_data.set_index([self.batch_dim, type_name])
-        return self.bounds_data
+        return bounds_data
 
     def _bounds_melt(self, bounds_data=None, bound_name="edge"):
         if bounds_data is None:
@@ -571,7 +574,7 @@ class ICPMSAnalysis(DataApplier):
             an ICPMSAnalaysis object interpolated at `bounds_data`
         """
 
-        # bounds_data = self._bounds_check_index(bounds_data, type_name)
+        bounds_data = self._bounds_check_index(bounds_data, type_name)
         bounds_melt = self._bounds_melt(bounds_data=bounds_data, bound_name=bound_name)
         bounds_index = self._bounds_to_index(bounds_melt=bounds_melt)
 
