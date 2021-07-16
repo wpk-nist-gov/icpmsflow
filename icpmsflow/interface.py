@@ -17,7 +17,6 @@ from .plotbounds import DataExplorerCombined
 
 
 class ICPMSAnalysis(DataApplier):
-
     _NEW_LIKE_KEYS = [
         "x_dim",
         "batch_dim",
@@ -107,6 +106,7 @@ class ICPMSAnalysis(DataApplier):
 
     @property
     def elements(self):
+        # sourcery skip: lift-return-into-if, remove-unnecessary-else
         if self.is_tidy:
             out = _get_col_or_level(self.frame, self.element_dim).unique()
         else:
@@ -357,7 +357,6 @@ class ICPMSAnalysis(DataApplier):
             left_index=True,
             right_index=True,
         )
-
         df = df.fillna(0.0)
 
         baseline = (
@@ -395,6 +394,14 @@ class ICPMSAnalysis(DataApplier):
     ):
         """
         adjust bounds to fit within min/max of self.frame[self.x_dim]
+
+        Parameters
+        ----------
+        bounds_data : DataFrame, optional
+        as_frame : bool, default=False
+            If True, return new bounds_data DataFrame.
+        lower_name, upper_name, type_name : str
+            Names of columns/levels for properties in `bounds_data`
         """
 
         bounds_data = self._bounds_check_index(bounds_data, type_name)
@@ -453,6 +460,25 @@ class ICPMSAnalysis(DataApplier):
     ):
         """
         adjust bounds to fit correspond to nearest x value
+
+        Parameters
+        ----------
+        bounds_data : DataFrame, optiona
+        as_frame : bool, default=False
+            whether to return a new object like `self` or new bounds_data
+        lower_name, upper_name, type_name, baseline_name, signal_name : str
+            Names of columns/levels for properties
+        baseline_lower, baseline_upper, signal_lower, signal_upper : str, {'ffill','bfill','nearest}
+            parameters for lookup of of, respectively, the
+            baseline lower/upper and signal lower/upper bounds.
+            * ffill : use previous value if no exact match
+            * bfill : use next value if no exact match
+            * nearest : use nearest value if no exact match
+
+        See Also
+        --------
+        pandas.Index.get_indexer
+
         """
 
         bounds_data = self._bounds_check_index(bounds_data, type_name)
@@ -708,10 +734,7 @@ class ICPMSAnalysis(DataApplier):
                 d[name] = (path, frame)
 
         for name, (path, frame) in d.items():
-            if name == "bounds_data":
-                index = True
-            else:
-                index = False
+            index = name == "bounds_data"
             frame.to_csv(path, index=index)
 
     @classmethod
@@ -739,10 +762,7 @@ class ICPMSAnalysis(DataApplier):
             raise ValueError("no base frame found")
 
         for name, path in d.items():
-            if name == "bounds_data":
-                index_col = [0, 1]
-            else:
-                index_col = None
+            index_col = [0, 1] if name == "bounds_data" else None
             kws[name] = pd.read_csv(path, index_col=index_col)
 
         return cls(**kws)

@@ -87,9 +87,7 @@ def parse_meta_list(meta_list):
         dictionary of meta data values
 
     """
-    out = {}
-    out["data_path"] = meta_list[0]
-    out["info"] = meta_list[1].strip()
+    out = {"data_path": meta_list[0], "info": meta_list[1].strip()}
     time_batch = ":".join((meta_list[2].split(":"))[1:]).split("using Batch")
     out["aquired_time"] = time_batch[0].strip()
     out["batch"] = time_batch[1].strip()
@@ -199,14 +197,10 @@ def tidy_frame(
 
     """
     if id_vars is not None:
-        if isinstance(id_vars, str):
-            id_vars = [id_vars]
-        else:
-            id_vars = list(id_vars)
-
+        id_vars = [id_vars] if isinstance(id_vars, str) else list(id_vars)
         # if id_vars are already in index, then drop them
         id_vars = [x for x in id_vars if x not in df.index.names]
-        if len(id_vars) == 0:
+        if not id_vars:
             id_vars = None
 
     out = df.melt(
@@ -264,14 +258,13 @@ def apply_func_over_groups(
                 out = df.iloc[[0], :].loc[:, y_dim].copy()
             else:
                 out = df.iloc[[0], :].drop(x_dim, axis=1)
-        else:
-            if drop_unused:
-                if x_dim in df.columns:
-                    out = df.loc[:, [x_dim] + y_dim].copy()
-                else:
-                    out = df.loc[:, y_dim].copy()
+        elif drop_unused:
+            if x_dim in df.columns:
+                out = df.loc[:, [x_dim] + y_dim].copy()
             else:
-                out = df.copy()
+                out = df.loc[:, y_dim].copy()
+        else:
+            out = df.copy()
 
         out.loc[:, y_dim] = func(df, x_dim, y_dim, **kws)
 
@@ -667,7 +660,7 @@ def interpolate_newx_frame(
     sort_index=True,
     ret_all=False,
     **kwargs,
-):
+):  # sourcery skip: lift-return-into-if, use-assigned-variable
     """
     interpolate a dataframe at x
 
@@ -780,14 +773,14 @@ class _Groupby(object):
         return ((meta, self._parent.new_like(x)) for meta, x in self._group)
 
     def __getattr__(self, attr):
-        if hasattr(self._group, attr):
-            out = getattr(self._group, attr)
-            if callable(out):
-                return _CallableResult(self._parent, out)
-            else:
-                return self._parent.new_like(out)
-        else:
+        if not hasattr(self._group, attr):
             raise AttributeError("no attribute {} in groupby".format(attr))
+
+        out = getattr(self._group, attr)
+        if callable(out):
+            return _CallableResult(self._parent, out)
+        else:
+            return self._parent.new_like(out)
 
 
 class _LocIndexer(object):
@@ -1389,10 +1382,7 @@ def cumtrapz_frame2(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False)
 
     if groupby is None:
         if drop_unused:
-            if x in df.columns:
-                out = df.loc[:, [x] + y].copy()
-            else:
-                out = df.loc[:, y].copy()
+            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
         else:
             out = df.copy()
 
@@ -1446,10 +1436,7 @@ def norm_frame2(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
 
     if groupby is None:
         if drop_unused:
-            if x in df.columns:
-                out = df.loc[:, [x] + y].copy()
-            else:
-                out = df.loc[:, y].copy()
+            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
         else:
             out = df.copy()
 
@@ -1517,10 +1504,7 @@ def median_filter_frame2(
 
     if groupby is None:
         if drop_unused:
-            if x in df.columns:
-                out = df.loc[:, [x] + y].copy()
-            else:
-                out = df.loc[:, y].copy()
+            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
         else:
             out = df.copy()
 
