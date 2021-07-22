@@ -104,6 +104,34 @@ def move_columns_to_front(df, cols):
     return df[cols + list(df.columns.drop(cols))]
 
 
+def _ensure_unique_batches(frame_list, meta_list):
+
+    batch_count = {}
+
+    out_frame = []
+    out_meta = []
+
+    for df, meta_orig in zip(frame_list, meta_list):
+
+        meta = meta_orig.copy()
+        meta["batch_name"] = meta["batch"]
+
+        batch = meta["batch"]
+        if batch in batch_count:
+            batch_count[batch] += 1
+        else:
+            batch_count[batch] = 0
+
+        count = batch_count[batch]
+        if count != 0:
+            meta["batch"] = meta["batch"] + f"-({count})"
+
+        out_meta.append(meta)
+        out_frame.append(df.assign(batch=meta["batch"]))
+
+    return out_frame, out_meta
+
+
 def load_paths(paths, index_cols=None, **kws):
     """
     load multiple csv files into single dataframe
@@ -141,8 +169,13 @@ def load_paths(paths, index_cols=None, **kws):
         L.append(df.assign(batch=meta_dict["batch"]))
         M.append(meta_dict)
 
+    L, M = _ensure_unique_batches(L, M)
+
     df = pd.concat(L, ignore_index=True)
     df_meta = pd.DataFrame(M)
+
+    if len(df["batch"].unique()) != len(df_meta):
+        raise ValueError("missmatch between number of unique batches and metadata")
 
     if index_cols is not None:
         df = df.set_index([x for x in index_cols if x in df.columns])
