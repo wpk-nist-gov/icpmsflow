@@ -30,34 +30,40 @@ This project is available on pypi and conda in two flavors.  The core package in
 packages needed to perform the data analysis.  This can be installed from pip with
 
 .. code-block:: console
+
    $ pip install icpmsflow
 
 or from conda with
 
 .. code-block:: console
+
    $ conda install -c wpk-nist icpmsflow
 
 
 To install the optional plotting/jupyter dependencies, use either
 
 .. code-block:: console
+
    $pip install icpmsflow[all]
 
 or
 
 .. code-block:: console
+
    $ conda install -c wpk-nist icpmsflow-all
 
 
 If you prefer to install from github, use either
 
 .. code-block:: console
+
    $ pip install git+https://github.com/wpk-nist-gov/icpmsflow.git@develop
 
 for basic install, or
 
 
 .. code-block:: console
+
    $ pip install 'git+https://github.com/wpk-nist-gov/icpmsflow.git@develop#egg=icpmsflow[all]'
 
 
