@@ -44,7 +44,7 @@ To install the optional plotting/jupyter dependencies, use either
 
 .. code-block:: console
 
-   $pip install icpmsflow[all]
+   $ pip install icpmsflow[all]
 
 or
 
