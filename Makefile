@@ -80,18 +80,24 @@ init: .git pre-commit-init ## run git-init pre-commit
 conda-env: ## conda create base env
 	conda env create -f environment.yml
 
+conda-full-env:
+	conda env update -n icpmsflow-env -f environment-all.yml
+
 conda-dev: ## conda update development dependencies
 	conda env update -n icpmsflow-env -f environment-dev.yml
 
-conda-all: conda-env conda-dev ## conda create development env
+conda-all: conda-env conda-full-env conda-dev ## conda create development env
 
 mamba-env: ## mamba create base env
 	mamba env create -f environment.yml
 
+mamba-full-env:
+	mamba env update -n icpmsflow-env -f environment-all.yml
+
 mamba-dev: ## mamba update development dependencies
 	mamba env update -n icpmsflow-env -f environment-dev.yml
 
-mamba-all: mamba-env mamba-dev ## mamba create development env
+mamba-all: mamba-env mamba-full-env mamba-dev ## mamba create development env
 
 activate: ## activate base env
 	conda activate icpmsflow-env

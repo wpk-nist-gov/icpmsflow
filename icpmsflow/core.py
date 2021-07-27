@@ -4,6 +4,7 @@ Core routines to analyze icpms data
 
 """
 
+import pathlib
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", urls=False, **kws):
         number of rows at top of file corresponding to metadata
     nbot : int, default=1
         number of rows (not counting blank lines) that correspond to metadata
+    This is to pickup a line like 'Printed:...'
     sep : string, default=','
     kws : dict
     urls : bool, default=False
@@ -54,20 +56,24 @@ def read_csv_with_meta(path, ntop=3, nbot=1, sep=",", urls=False, **kws):
         meta = [f.readline().strip() for _ in range(ntop)]
         # clean up meta data
         meta = [x.decode() if isinstance(x, bytes) else x for x in meta]
-
         df = pd.read_csv(f, **kws)
-    # grab last line
 
-    for i, g in df.iloc[-nbot:, :].iterrows():
-        s = sep.join(g.dropna().str.strip().values)
-        meta.append(s)
+    if nbot > 0:
+        # See if last line contains non numeric data
+        try:
+            for i, g in df.iloc[-nbot:, :].iterrows():
+                s = sep.join(g.dropna().str.strip().values)
+                meta.append(s)
+            df = df.iloc[:-nbot]
+        except Exception:
+            pass
 
-    df = df.iloc[:-nbot].applymap(pd.to_numeric)
+    df = df.applymap(pd.to_numeric)
 
     return df, meta
 
 
-def parse_meta_list(meta_list):
+def parse_meta_list(meta_list, path, windows_meta_path=None):
     """
     Parse list of (standard) meta_list data to dictonary
 
@@ -76,7 +82,7 @@ def parse_meta_list(meta_list):
     meta_list : list
         list of meta data. Expected form is:
 
-        * meta_list[0] : data path
+        * meta_list[0] : path
         * meta_list[1] : info
         * meta_list[2] : acquired time, e.g., "Acquired      : 2021-02-01 16:08:12 using Batch 1FEB21SC2402."
         * meta_list[3] : printed time, e.g., ""Printed:2021-02-01 16:10:51"
@@ -85,16 +91,48 @@ def parse_meta_list(meta_list):
     -------
     meta_dict : dict
         dictionary of meta data values
-
     """
-    out = {"data_path": meta_list[0], "info": meta_list[1].strip()}
+    # top level stuff
+    path = Path(path)
+
+    if windows_meta_path is None:
+        # Try to sniff out if path is windows path
+        string_path = meta_list[0]
+        windows_meta_path = pathlib.PurePath(string_path).name == string_path
+
+    if windows_meta_path:
+        meta_path = pathlib.PureWindowsPath(meta_list[0])
+    else:
+        meta_path = pathlib.PurePosixPath(meta_list[0])
+
+    file_name = path.with_suffix("").name
+    experiment = meta_path.parent.name
+    batch = f"{experiment}-{file_name}"
+
     time_batch = ":".join((meta_list[2].split(":"))[1:]).split("using Batch")
-    out["aquired_time"] = time_batch[0].strip()
-    out["batch"] = time_batch[1].strip()
-    out["printed_time"] = ":".join(meta_list[3].split(":")[1:])
+    aquired_time = time_batch[0].strip()
+    experiment_from_aquired = time_batch[1].strip()
+
+    out = {
+        "batch": batch,
+        "experiment": experiment,
+        "file_name": file_name,
+        "run": meta_path.name,
+        "file_path": str(path),
+        "meta_path": str(meta_path),
+        "info": meta_list[1].strip(),
+        "aquired_time": aquired_time,
+        "exeriment_from_aquired": experiment_from_aquired,
+    }
+
+    if len(meta_list) > 3:
+        out["printed_time"] = ":".join(meta_list[3].split(":")[1:])
+
     # convert datetimes
     for k in ["aquired_time", "printed_time"]:
-        out[k] = datetime.strptime(out[k], "%Y-%m-%d %H:%M:%S")
+        if k in out:
+            out[k] = datetime.strptime(out[k], "%Y-%m-%d %H:%M:%S")
+
     return out
 
 
@@ -114,7 +152,6 @@ def _ensure_unique_batches(frame_list, meta_list):
     for df, meta_orig in zip(frame_list, meta_list):
 
         meta = meta_orig.copy()
-        meta["batch_name"] = meta["batch"]
 
         batch = meta["batch"]
         if batch in batch_count:
@@ -124,6 +161,7 @@ def _ensure_unique_batches(frame_list, meta_list):
 
         count = batch_count[batch]
         if count != 0:
+            meta["batch_original"] = meta["batch"]
             meta["batch"] = meta["batch"] + f"-({count})"
 
         out_meta.append(meta)
@@ -132,7 +170,7 @@ def _ensure_unique_batches(frame_list, meta_list):
     return out_frame, out_meta
 
 
-def load_paths(paths, index_cols=None, **kws):
+def load_paths(paths, index_cols=None, windows_meta_path=None, **kws):
     """
     load multiple csv files into single dataframe
 
@@ -164,8 +202,9 @@ def load_paths(paths, index_cols=None, **kws):
     for path in paths:
         # analyze a single path
         df, meta_list = read_csv_with_meta(path, **kws)
-        meta_dict = parse_meta_list(meta_list)
-        meta_dict["read_path"] = str(path)
+        meta_dict = parse_meta_list(
+            meta_list, path=path, windows_meta_path=windows_meta_path
+        )
         L.append(df.assign(batch=meta_dict["batch"]))
         M.append(meta_dict)
 

@@ -2,16 +2,9 @@ name: icpmsflow-env
 channels:
   - conda-forge
   - wpk-nist
-  - ioam
 dependencies:
   - python=3.8
   - numpy
   - pandas
-  - openpyxl
   - scipy
-  - holoviews
-  - bokeh
-  # because using scm versioning
   - setuptools>=38.4
-  # cli
-  # maybe put in development/optional?
