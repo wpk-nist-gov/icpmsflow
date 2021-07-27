@@ -1,4 +1,4 @@
-from .core import DataApplier, load_paths  # cumtrapz_frame, norm_frame, tidy_frame
+from .core import DataApplier, load_paths
 from .interface import ICPMSAnalysis
 from .plotbounds import DataExplorerCombined
 

@@ -26,36 +26,45 @@ Package to work with icpms data
 Installation
 ------------
 
-This project is not yet available via conda or on pypi.  The recommended route is to install most dependencies via conda, then pip install directly from github.  For this, do the following:
-
-If you'd like to create an isolated environment:
-
-.. code-block:: console
-
-    $ conda create -n {env-name} python=3.8
-
-Activate the environment you'd like to install to with:
+This project is available on pypi and conda in two flavors.  The core package includes only the
+packages needed to perform the data analysis.  This can be installed from pip with
 
 .. code-block:: console
 
-   $ conda activate {env-name}
+   $ pip install icpmsflow
 
-Install required dependencies with:
+or from conda with
 
 .. code-block:: console
 
-   $ conda install -n {env-name} setuptools numpy pandas openpyxl scipy holoviews bokeh jupyter
+   $ conda install -c wpk-nist icpmsflow
 
 
-Note that `jupyter` is not strictly required, but assumed.  You can also use `ipykernel` to just install the kernel for the target environment.
+To install the optional plotting/jupyter dependencies, use either
+
+.. code-block:: console
+
+   $ pip install icpmsflow[all]
+
+or
+
+.. code-block:: console
+
+   $ conda install -c wpk-nist icpmsflow-all
 
 
-Finally, install `neutron_analysis` in the active environment do:
+If you prefer to install from github, use either
 
 .. code-block:: console
 
    $ pip install git+https://github.com/wpk-nist-gov/icpmsflow.git@develop
 
+for basic install, or
+
+
+.. code-block:: console
+
+   $ pip install 'git+https://github.com/wpk-nist-gov/icpmsflow.git@develop#egg=icpmsflow[all]'
 
 
 Example usage
