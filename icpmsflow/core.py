@@ -95,10 +95,11 @@ def parse_meta_list(meta_list, path, windows_meta_path=None):
     # top level stuff
     path = Path(path)
 
+    # try to sniff out if path is different than for the system:
     if windows_meta_path is None:
         # Try to sniff out if path is windows path
         string_path = meta_list[0]
-        windows_meta_path = pathlib.PurePath(string_path).name == string_path
+        windows_meta_path = pathlib.PurePosixPath(string_path).name == string_path
 
     if windows_meta_path:
         meta_path = pathlib.PureWindowsPath(meta_list[0])
