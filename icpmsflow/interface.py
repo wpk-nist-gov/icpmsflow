@@ -768,16 +768,30 @@ class ICPMSAnalysis(DataApplier):
         return cls(**kws)
 
     @classmethod
-    def from_paths(cls, paths, load_kws=None, **kws):
+    def from_paths(cls, paths, filename_paths=None, load_kws=None, **kws):
         """
         Create ICPMSAnalysis object from csv files
 
 
         Parameters
         ----------
+        paths : str, Path, or sequence of str or Path.
+            collection of paths to read.  If str or Path, read in single
+            path.  Otherwise read in multple paths
+        filename_paths : str, Path, or sequence of str or Path.
+            Alternative path to add to metadata.  This is mostly
+            used with external applications that may mangle the
+            paths.
+        load_kws : dict, optional
+            extra arguments to `load_paths`
+
+        See Also
+        --------
+        load_paths
         """
         if load_kws is None:
             load_kws = {}
+        load_kws["filename_paths"] = filename_paths
 
         df, df_meta = load_paths(paths, **load_kws)
         return cls(frame=df, meta=df_meta, **kws)

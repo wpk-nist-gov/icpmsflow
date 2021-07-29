@@ -171,7 +171,9 @@ def _ensure_unique_batches(frame_list, meta_list):
     return out_frame, out_meta
 
 
-def load_paths(paths, index_cols=None, windows_meta_path=None, **kws):
+def load_paths(
+    paths, index_cols=None, windows_meta_path=None, filename_paths=None, **kws
+):
     """
     load multiple csv files into single dataframe
 
@@ -184,6 +186,10 @@ def load_paths(paths, index_cols=None, windows_meta_path=None, **kws):
         keys to add to dataframe from meta dictionary
         default is to only include batch
 
+    filename_paths : str, Path, or sequence of str or Path.
+        Alternative path to add to metadata.  This is mostly
+        used with external applications that may mangle the
+        paths.
     kws : dict
         extra arguemtns to `read_csv_with_meta`
 
@@ -198,13 +204,22 @@ def load_paths(paths, index_cols=None, windows_meta_path=None, **kws):
     if isinstance(paths, (str, Path)):
         paths = [paths]
 
+    if filename_paths is None:
+        filename_paths = paths
+
+    if isinstance(filename_paths, (str, Path)):
+        filename_paths = [filename_paths]
+
+    if len(filename_paths) != len(paths):
+        raise ValueError("length of paths and filename_paths must be the same")
+
     L = []
     M = []
-    for path in paths:
+    for path, filename_path in zip(paths, filename_paths):
         # analyze a single path
         df, meta_list = read_csv_with_meta(path, **kws)
         meta_dict = parse_meta_list(
-            meta_list, path=path, windows_meta_path=windows_meta_path
+            meta_list, path=filename_path, windows_meta_path=windows_meta_path
         )
         L.append(df.assign(batch=meta_dict["batch"]))
         M.append(meta_dict)
