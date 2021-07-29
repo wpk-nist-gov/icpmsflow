@@ -37,8 +37,9 @@ or from conda with
 
 .. code-block:: console
 
-   $ conda install -c wpk-nist icpmsflow
+   $ conda install -c conda-forge -c wpk-nist icpmsflow
 
+Optionally, include a `-n {env-name}` to specify the install environment.
 
 To install the optional plotting/jupyter dependencies, use either
 
@@ -50,7 +51,7 @@ or
 
 .. code-block:: console
 
-   $ conda install -c wpk-nist icpmsflow-all
+   $ conda install -c conda-forge -c wpk-nist icpmsflow-all
 
 
 If you prefer to install from github, use either
