@@ -1,0 +1,36 @@
+{% set name = "icpmsflow" %}
+{% set version = "0.0.5" %}
+
+
+package:
+  name: {{ name|lower }}-all
+  version: {{ version }}
+
+
+build:
+  entry_points: []
+  number: 0
+  noarch: python
+  string: 'py_0'
+
+requirements:
+  build: []
+  run:
+    - bokeh
+    - holoviews
+    - icpmsflow
+    - jupyter
+    - matplotlib
+    - openpyxl
+
+about:
+  home: https://github.com/wpk-nist-gov/icpmsflow
+  summary: Package to work with icpms data with extra packages
+  license: MIT
+  license_file: LICENSE
+
+extra:
+  copy_test_source_files: true
+  final: true
+  recipe-maintainers:
+    - wpK
