@@ -421,6 +421,7 @@ class PlotExplorer(param.Parameterized):
     # checkboxes for type of plot
     integrate_check = param.Boolean(default=False, label="Integrate")
     normalize_check = param.Boolean(default=False, label="Normalize")
+    normalize_total_check = param.Boolean(default=False, label="Normalize batch")
     gradient_check = param.Boolean(default=False, label="Gradient")
     smooth_line_check = param.Boolean(default=False, label="Median filter (line)")
     smooth_scat_check = param.Boolean(default=False, label="Meidan filter (scatter)")
@@ -524,7 +525,14 @@ class PlotExplorer(param.Parameterized):
     def _apply_all_funcs(self, sub, names=None):
 
         if names is None:
-            names = ["integrate", "normalize", "smooth_line", "smooth_scat", "gradient"]
+            names = [
+                "integrate",
+                "normalize",
+                "normalize_total",
+                "smooth_line",
+                "smooth_scat",
+                "gradient",
+            ]
 
         checks = {k: getattr(self, k + "_check") for k in names}
 
@@ -542,9 +550,18 @@ class PlotExplorer(param.Parameterized):
             )
 
             # do integration and normalization first
-            for name in ["integrate", "normalize"]:
-                if checks[name]:
-                    d = getattr(d, name)()
+            if checks["integrate"]:
+                d = d.integrate()
+
+            # total normalization
+            if checks["normalize_total"]:
+                # this won't work here, as data is tidy
+                # d = d.normalize(total=True)
+                # instead, use below
+                d = d.normalize(by=[k for k in d.by if k != self.element_dim])
+
+            elif checks["normalize"]:
+                d = d.normalize()
 
             # do smoothing before gradient
 
@@ -589,6 +606,7 @@ class PlotExplorer(param.Parameterized):
         "element",
         "step_plot",
         "normalize_check",
+        "normalize_total_check",
         "integrate_check",
         "gradient_check",
         "smooth_line_check",

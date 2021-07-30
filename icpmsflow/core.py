@@ -448,9 +448,13 @@ def _func_cumtrapz(df, x, y):
     return cumtrapz(y=df.loc[:, y].values, x=xvals, axis=0, initial=0)
 
 
-def _func_norm(df, x, y):
+def _func_norm(df, x, y, total=False):
     t = df.loc[:, y]
-    return t / t.max()
+    m = t.max()
+    if total:
+        m = m.max()
+
+    return t / m
 
 
 def _func_median_filter(df, x, y, **kws):
@@ -611,7 +615,35 @@ def cumtrapz_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=Fals
 
 
 @doc_apply_over_groups("normalize", summary="normalize by max value")
-def norm_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
+def norm_frame(
+    df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False, total=False
+):
+    """normalize by max value
+
+    Parameters
+    ----------
+    {Default_Parameters}
+    total : bool, default=False
+        If `True`, then normalize the maximum across all columns
+        Otherwise, each column is normalized by the maximum
+        in that columns
+    window_length : int, default=None
+        window_length parameter to savgol filter
+    polyorder : int, default=2
+        polyorder parameter to savgol filter
+    kws : dict
+        extra arguments to savegol_filter
+
+    Returns
+    -------
+    {Default_Returns}
+
+    See Also
+    --------
+    {Default_See_Also}
+    scipy.signal.savgol_filter
+    """
+
     return apply_func_over_groups(
         func=_func_norm,
         df=df,
@@ -620,6 +652,7 @@ def norm_frame(df, by=None, x_dim="Time [Sec]", y_dim=None, drop_unused=False):
         y_dim=y_dim,
         drop_unused=drop_unused,
         reduction=False,
+        total=total,
     )
 
 
@@ -1040,12 +1073,12 @@ class DataApplier(object):
         return self.cumtrapz(**kws)
 
     @doc_apply_like(norm_frame)
-    def norm(self, **kws):
-        return self._apply_func(norm_frame, **kws)
+    def norm(self, total=False, **kws):
+        return self._apply_func(norm_frame, total=total, **kws)
 
     @doc_apply_like(norm_frame)
-    def normalize(self, **kws):
-        return self.norm(**kws)
+    def normalize(self, total=False, **kws):
+        return self.norm(total=total, **kws)
 
     @doc_apply_like(interpolate_na_frame)
     def interpolate_na(self, **kws):
@@ -1380,237 +1413,3 @@ def parse_element_series(elements, sep="->", as_dict=False):
     tag = s.str.get(0).str.strip()
     number = s.str.get(1).astype(int)
     return tag, number
-
-
-def trapz_frame2(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
-    """
-    Perform integration on dataframe
-
-    Parameter
-    ---------
-    df : dataframe
-    grouby : str or array of str, optional
-        names to groupby.  If not specified,
-        integral over entire frame
-    x : str
-        column to use as "x" values
-    y : str or array of str, optional
-        columns of "y" data.  If not specified,
-        use all columns except `x`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x`
-    """
-    # total integrals
-    if y is None:
-        if groupby is None:
-            col_drop = [x]
-        elif isinstance(groupby, str):
-            col_drop = [x, groupby]
-        else:
-            col_drop = [x] + list(groupby)
-        y = [x for x in df.columns if x not in col_drop]
-    elif isinstance(y, str):
-        y = [y]
-
-    if groupby is None:
-        if drop_unused:
-            out = df.iloc[[0], :].loc[:, y].copy()
-        else:
-            out = df.iloc[[0], :].drop(x, axis=1)
-
-        xvals = _get_col_or_level(df, x).values
-
-        out.loc[:, y] = trapz(y=df.loc[:, y].values, x=xvals, axis=0)
-    else:
-        out = pd.concat(
-            (
-                trapz_frame(g, groupby=None, x=x, y=y)
-                for _, g in df.groupby(groupby, sort=False)
-            )
-        )
-
-    return out
-
-
-def cumtrapz_frame2(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
-    """
-    Perform cumulative integration on dataframe
-
-    Parameter
-    ---------
-    df : dataframe
-    groupby : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x : str
-        column to use as "x" values
-    y : str or array of str, optional
-        columns of "y" data.  If not specified,
-        use all columns except `x`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x`
-    """
-
-    if y is None:
-        if groupby is None:
-            col_drop = [x]
-        elif isinstance(groupby, str):
-            col_drop = [x, groupby]
-        else:
-            col_drop = [x] + list(groupby)
-        y = [x for x in df.columns if x not in col_drop]
-    elif isinstance(y, str):
-        y = [y]
-
-    if groupby is None:
-        if drop_unused:
-            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
-        else:
-            out = df.copy()
-
-        xvals = _get_col_or_level(df, x).values
-
-        out.loc[:, y] = cumtrapz(y=df.loc[:, y].values, x=xvals, initial=0, axis=0)
-
-    else:
-        out = pd.concat(
-            (
-                cumtrapz_frame(g, groupby=None, x=x, y=y, drop_unused=drop_unused)
-                for _, g in df.groupby(groupby, sort=False)
-            )
-        )
-    return out
-
-
-def norm_frame2(df, groupby=None, x="Time [Sec]", y=None, drop_unused=False):
-    """
-    Perform normalization
-
-    Parameter
-    ---------
-    df : dataframe
-    groupby : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x : str
-        column to use as "x" values
-        These are ignored
-    y : str or array of str, optional
-        columns of "y" data.  If not specified,
-        use all columns except `x`
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x`
-    """
-
-    if y is None:
-        if groupby is None:
-            col_drop = [x]
-        elif isinstance(groupby, str):
-            col_drop = [x, groupby]
-        else:
-            col_drop = [x] + list(groupby)
-        y = [x for x in df.columns if x not in col_drop]
-    elif isinstance(y, str):
-        y = [y]
-
-    if groupby is None:
-        if drop_unused:
-            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
-        else:
-            out = df.copy()
-
-        t = df.loc[:, y]
-        out.loc[:, y] = t / t.max()
-
-    else:
-        out = pd.concat(
-            (
-                norm_frame(g, groupby=None, x=x, y=y, drop_unused=drop_unused)
-                for _, g in df.groupby(groupby, sort=False)
-            )
-        )
-    return out
-
-
-def median_filter_frame2(
-    df, groupby=None, x="Time [Sec]", y=None, drop_unused=False, kernel_size=None, **kws
-):
-    """
-    Perform smoothing with median filter
-
-    Parameter
-    ---------
-    df : dataframe
-    groupby : str or array of str, optional
-        names to groupgroupby.  If not specified,
-        integral over entire frame
-    x : str
-        column to use as "x" values
-        These are ignored
-    y : str or array of str, optional
-        columns of "y" data.  If not specified,
-        use all columns except `x`
-    kernel_size : int
-
-    kws : dict
-        extra arguments to `scipy.ndimage.median_filter`
-        Default values are
-
-        * size: (kernel_size, 1)
-        * mode: 'constant'
-
-    Returns
-    -------
-    output : dataframe
-        dataframe integrated over `x`
-    """
-
-    if kernel_size is None:
-        return df
-
-    kws = dict(dict(size=(kernel_size, 1), mode="constant"), **kws)
-
-    if y is None:
-        if groupby is None:
-            col_drop = [x]
-        elif isinstance(groupby, str):
-            col_drop = [x, groupby]
-        else:
-            col_drop = [x] + list(groupby)
-        y = [x for x in df.columns if x not in col_drop]
-    elif isinstance(y, str):
-        y = [y]
-
-    if groupby is None:
-        if drop_unused:
-            out = df.loc[:, [x] + y].copy() if x in df.columns else df.loc[:, y].copy()
-        else:
-            out = df.copy()
-
-        out.loc[:, y] = median_filter(out.loc[:, y].values, **kws)
-
-    else:
-        out = pd.concat(
-            (
-                median_filter_frame(
-                    g,
-                    groupby=None,
-                    x=x,
-                    y=y,
-                    drop_unused=drop_unused,
-                    kernel_size=kernel_size,
-                    **kws,
-                )
-                for _, g in df.groupby(groupby, sort=False)
-            )
-        )
-    return out
