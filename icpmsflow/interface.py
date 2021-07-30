@@ -796,6 +796,126 @@ class ICPMSAnalysis(DataApplier):
         df, df_meta = load_paths(paths, **load_kws)
         return cls(frame=df, meta=df_meta, **kws)
 
+    def to_excel(
+        self,
+        path,
+        engine="openpyxl",
+        overwrite=False,
+        frame_sheet="Spectra",
+        bounds_sheet="Bounds",
+        meta_sheet="Meta",
+        other_sheets=None,
+        sheet_kws=None,
+        **kws,
+    ):
+        """
+        Create excel file from underlying data
+
+        Parameters
+        ----------
+        path : str or path
+            output file path. Note that this should include the extension '.xlsx'.
+        engine : str, optional
+            Excel writing engine passed to `pandas.ExcelWriter`
+        overwrite : bool, default=False
+            Whether to overwrite a file if already exists.
+        frame_sheet : str, default='Spectra'
+            name of worksheet to place `self.frame`
+        meta_sheet : str, default='Meta'
+            name of worksheet to place `self.meta` if not `None`
+        bounds_sheet : str, default='Bounds'
+            name of worksheet to place `self.bounds_data` if not `None`
+        other_sheets : dict, optional
+            other dataframes to include in the excel file.  This dictionary
+            should have the form {sheet_name : df, ...}
+        sheet_kws : dict, optional
+            Dictionary of keyword arguments to `pandas.DataFrame.to_excel`.
+            This has the form {sheet_name : {option: val, ...}}
+            Note that to set options for `self.frame`, `self.meta`, `self.bounds_data`, you must
+            use the corresponding value of `frame_sheet`, `bounds_sheet`, `meta_sheet` as the key.
+            For example, to set the index option for `self.frame`, with `frame_sheet='Spectra`, then
+            use `sheet_kws = {'Spectra': {'index': True}}`.
+        **kws : dict, optional
+            extra arguments to `pandas.ExcelWriter
+
+        See Also
+        --------
+        pandas.ExcelWriter, pandas.DataFrame.to_excel`
+        """
+        from pathlib import Path
+
+        path = Path(path)
+        if not overwrite and path.exists():
+            raise ValueError(f"{path} exists. Set `overwrite=True` to overwrite it.")
+
+        if other_sheets is None:
+            other_sheets = {}
+        if sheet_kws is None:
+            sheet_kws = {}
+
+        all_sheets = {
+            frame_sheet: self.frame,
+            bounds_sheet: self.bounds_data,
+            meta_sheet: self.meta,
+            **other_sheets,
+        }
+
+        with pd.ExcelWriter(path, engine=engine, **kws) as writer:
+            for sheet_name, df in all_sheets.items():
+                if df is not None:
+                    kws = sheet_kws.get(sheet_name, {})
+                    df.to_excel(writer, sheet_name, **kws)
+
+    @classmethod
+    def from_excel(
+        cls,
+        path,
+        engine="openpyxl",
+        frame_sheet="Spectra",
+        bounds_sheet="Bounds",
+        meta_sheet="Meta",
+        sheet_kws=None,
+        excel_kws=None,
+        **kws,
+    ):
+        if excel_kws is None:
+            excel_kws = {}
+        if sheet_kws is None:
+            sheet_kws = {}
+
+        # setup default sheet kws:
+        default_sheet_kws = {
+            frame_sheet: {"index_col": 0},
+            bounds_sheet: {"index_col": [0, 1]},
+            meta_sheet: {"index_col": 0},
+        }
+
+        for k, default in default_sheet_kws.items():
+            if k in sheet_kws:
+                sheet_kws[k] = dict(default, **sheet_kws[k])
+            else:
+                sheet_kws[k] = default
+
+        out = {}
+        with pd.ExcelFile(path, engine=engine, **excel_kws) as f:
+
+            if frame_sheet not in f.sheet_names:
+                raise ValueError(f"did not find worksheet {frame_sheet} for frame")
+
+            out = {}
+            for sheet in [frame_sheet, bounds_sheet, meta_sheet]:
+                if sheet in f.sheet_names:
+                    out[sheet] = f.parse(sheet, **sheet_kws[sheet])
+                else:
+                    out[sheet] = None
+
+        return cls(
+            frame=out[frame_sheet],
+            meta=out[meta_sheet],
+            bounds_data=out[bounds_sheet],
+            **kws,
+        )
+
 
 # class ICPMSAnalysis_old:
 #     def __init__(
