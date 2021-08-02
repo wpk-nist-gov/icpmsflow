@@ -211,7 +211,7 @@ class ICPMSAnalysis(DataApplier):
         create new ICPMSAnalysis object with `bounds_data`
 
         Expect that Bounds Data will have multiindex with levels [`self.batch_dim`, `type_name`]
-        and columns ['lower_bounds','upper_bound]
+        and columns ['lower_bounds','upper_bound']
 
         Parameters
         ----------
@@ -359,23 +359,21 @@ class ICPMSAnalysis(DataApplier):
         )
         df = df.fillna(0.0)
 
-        baseline = (
-            df.assign(type_bound=baseline_name)
-            .assign(lower_bound=0.0)
-            .assign(upper_bound=lambda x_dim: x_dim["lb"] - shift[0])[
-                [type_name, lower_name, upper_name]
-            ]
-            .set_index("type_bound", append=True)
-        )
+        baseline = df.assign(
+            **{
+                type_name: baseline_name,
+                lower_name: 0.0,
+                upper_name: lambda x_dim: x_dim["lb"] - shift[0],
+            }
+        )[[type_name, lower_name, upper_name]].set_index(type_name, append=True)
 
-        signal = (
-            df.assign(type_bound=signal_name)
-            .assign(lower_bound=lambda x_dim: x_dim["lb"] + shift[1])
-            .assign(upper_bound=lambda x_dim: x_dim["ub"] - shift[2])[
-                [type_name, lower_name, upper_name]
-            ]
-            .set_index("type_bound", append=True)
-        )
+        signal = df.assign(
+            **{
+                type_name: signal_name,
+                lower_name: lambda x_dim: x_dim["lb"] + shift[1],
+                upper_name: lambda x_dim: x_dim["ub"] - shift[2],
+            }
+        )[[type_name, lower_name, upper_name]].set_index(type_name, append=True)
 
         bounds_data = pd.concat((baseline, signal)).sort_index()
 
