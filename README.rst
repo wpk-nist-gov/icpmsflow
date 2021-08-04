@@ -71,9 +71,9 @@ for basic install, or
 Example usage
 -------------
 
-See demo notebook : `demo <notebooks/example_usage.ipynb>`_
+See notebooks `tutorial <examples/tutorial/icpmsflow_tutorial.ipyn>`_ and `usage <examples/noisy_data/noisy_data.ipynb>`_
 
-Example dataset : `example <https://github.com/wpk-nist-gov/icpmsflow/blob/develop/notebooks/example.tgz?raw=true>_`
+
 
 
 Features
