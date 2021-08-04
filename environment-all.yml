@@ -1,0 +1,8 @@
+channels:
+  - conda-forge
+dependencies:
+  - holoviews
+  - bokeh
+  - openpyxl
+  - matplotlib
+  - jupyter
